@@ -92,21 +92,11 @@ def get_user(user_id: int) -> dict | None:
 
 
 def activate_subscription(user_id: int, sub_type: str, days: int, crystals: int):
-    """
-    Активирует подписку и начисляет кристаллы.
-
-    Args:
-        user_id: telegram id пользователя
-        sub_type: тип подписки (fan_30/premium_90)
-        days: количество дней подписки
-        crystals: количество кристаллов за подписку
-    """
+    """Активирует подписку и начисляет кристаллы"""
     expires_at = int(time.time()) + (days * 86400)
 
     conn = get_connection()
     cursor = conn.cursor()
-
-    # Активируем подписку
     cursor.execute('''
         UPDATE users
         SET subscription_type = ?,
@@ -114,17 +104,13 @@ def activate_subscription(user_id: int, sub_type: str, days: int, crystals: int)
             crystals = crystals + ?
         WHERE user_id = ?
     ''', (sub_type, expires_at, crystals, user_id))
-
-    # Записываем транзакцию
     cursor.execute('''
         INSERT INTO crystal_transactions (user_id, amount, reason)
         VALUES (?, ?, ?)
     ''', (user_id, crystals, "Подписка " + sub_type))
-
     conn.commit()
     conn.close()
-    print("[DB] Подписка активирована для user " + str(user_id) +
-          " +" + str(crystals) + " кристаллов")
+    print("[DB] Подписка активирована для user " + str(user_id))
 
 
 def add_crystals(user_id: int, amount: int, reason: str):
@@ -144,12 +130,7 @@ def add_crystals(user_id: int, amount: int, reason: str):
 
 
 def spend_crystals(user_id: int, amount: int, reason: str) -> bool:
-    """
-    Списывает кристаллы у пользователя.
-
-    Returns:
-        True если успешно, False если недостаточно кристаллов
-    """
+    """Списывает кристаллы — возвращает False если недостаточно"""
     user = get_user(user_id)
     if not user or user["crystals"] < amount:
         return False
@@ -170,12 +151,7 @@ def spend_crystals(user_id: int, amount: int, reason: str) -> bool:
 
 
 def check_subscription(user_id: int) -> dict:
-    """
-    Проверяет активность подписки пользователя.
-
-    Returns:
-        dict: active, type, days_left
-    """
+    """Проверяет активность подписки"""
     user = get_user(user_id)
 
     if not user:
@@ -209,7 +185,6 @@ def cancel_subscription(user_id: int):
     ''', (user_id,))
     conn.commit()
     conn.close()
-    print("[DB] Подписка отменена для user " + str(user_id))
 
 
 def save_payment(user_id: int, payment_id: str, sub_type: str,
