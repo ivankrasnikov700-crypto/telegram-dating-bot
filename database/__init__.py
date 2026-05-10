@@ -1,5 +1,8 @@
 # database/__init__.py
 # База данных SQLite — пользователи, подписки, кристаллы
+# Изменено:
+# activate_subscription() принимает minutes= для тестовых подписок
+# activate_subscription() сбрасывает флаг уведомления об истечении
 
 import sqlite3
 import os
@@ -20,7 +23,6 @@ def init_db():
     conn = get_connection()
     cursor = conn.cursor()
 
-    # Таблица пользователей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
             user_id INTEGER PRIMARY KEY,
@@ -29,6 +31,7 @@ def init_db():
             crystals INTEGER DEFAULT 0,
             subscription_type TEXT DEFAULT NULL,
             subscription_expires INTEGER DEFAULT NULL,
+            subscription_notified INTEGER DEFAULT 0,
             profiles_viewed INTEGER DEFAULT 0,
             favorites_count INTEGER DEFAULT 0,
             gifts_sent INTEGER DEFAULT 0,
@@ -36,7 +39,6 @@ def init_db():
         )
     ''')
 
-    # Таблица платежей
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS payments (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -52,7 +54,6 @@ def init_db():
         )
     ''')
 
-    # Таблица транзакций кристаллов
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS crystal_transactions (
             id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -91,9 +92,21 @@ def get_user(user_id: int) -> dict | None:
     return dict(row) if row else None
 
 
-def activate_subscription(user_id: int, sub_type: str, days: int, crystals: int):
-    """Активирует подписку и начисляет кристаллы"""
-    expires_at = int(time.time()) + (days * 86400)
+def activate_subscription(user_id: int, sub_type: str, days: int, crystals: int, minutes: int = 0):
+    """
+    Активирует подписку и начисляет кристаллы.
+
+    Args:
+        minutes > 0 — тестовая подписка на N минут (приоритет над days)
+        days        — боевая подписка на N дней
+    """
+    if minutes > 0:
+        # Тестовая подписка — считаем в секундах от минут
+        expires_at = int(time.time()) + (minutes * 60)
+        print("[DB] Тестовая подписка: " + str(minutes) + " мин для user " + str(user_id))
+    else:
+        # Боевая подписка — в днях
+        expires_at = int(time.time()) + (days * 86400)
 
     conn = get_connection()
     cursor = conn.cursor()
@@ -101,16 +114,20 @@ def activate_subscription(user_id: int, sub_type: str, days: int, crystals: int)
         UPDATE users
         SET subscription_type = ?,
             subscription_expires = ?,
+            subscription_notified = 0,
             crystals = crystals + ?
         WHERE user_id = ?
     ''', (sub_type, expires_at, crystals, user_id))
+
     cursor.execute('''
         INSERT INTO crystal_transactions (user_id, amount, reason)
         VALUES (?, ?, ?)
     ''', (user_id, crystals, "Подписка " + sub_type))
+
     conn.commit()
     conn.close()
-    print("[DB] Подписка активирована для user " + str(user_id))
+    print("[DB] Подписка активирована для user " + str(user_id) +
+          " истекает в " + str(expires_at))
 
 
 def add_crystals(user_id: int, amount: int, reason: str):
@@ -169,12 +186,20 @@ def check_subscription(user_id: int) -> dict:
         cancel_subscription(user_id)
         return {"active": False, "type": None, "days_left": 0}
 
-    days_left = (expires - now) // 86400
-    return {"active": True, "type": sub_type, "days_left": days_left}
+    days_left = max(0, (expires - now) // 86400)
+    seconds_left = expires - now
+
+    return {
+        "active":       True,
+        "type":         sub_type,
+        "days_left":    days_left,
+        "seconds_left": seconds_left,   # для тестовой подписки
+        "expires_at":   expires
+    }
 
 
 def cancel_subscription(user_id: int):
-    """Отменяет подписку пользователя"""
+    """Отменяет истёкшую подписку"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
@@ -185,6 +210,7 @@ def cancel_subscription(user_id: int):
     ''', (user_id,))
     conn.commit()
     conn.close()
+    print("[DB] Подписка отменена для user " + str(user_id))
 
 
 def save_payment(user_id: int, payment_id: str, sub_type: str,

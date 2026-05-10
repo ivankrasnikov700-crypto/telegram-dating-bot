@@ -1,13 +1,14 @@
 # handlers/girls.py
 # Каталог моделей — просмотр профилей, превью и премиум контент
-# Доступ зависит от типа подписки пользователя
+# Исправлено:
+# 1. Кнопка «Назад к каталогу» — удаляем фото-сообщение, показываем каталог
+# 2. Пагинация в каталоге (5 моделей на странице)
+# 3. Возраст берётся из _enrich_model() → calculate_age() динамически
 
 from telebot import types
 from database import (
     register_user,
-    get_user,
-    check_subscription,
-    spend_crystals
+    check_subscription
 )
 from database.models import (
     get_all_models,
@@ -16,62 +17,109 @@ from database.models import (
     get_all_media
 )
 
+# Количество моделей на одной странице каталога
+MODELS_PER_PAGE = 5
+
 
 # ─────────────────────────────────────────────
-# Вспомогательные функции
+# Вспомогательные функции — клавиатуры
 # ─────────────────────────────────────────────
 
-def get_girls_list_keyboard(models: list) -> types.InlineKeyboardMarkup:
+def get_girls_list_keyboard(models: list, page: int, total_pages: int) -> types.InlineKeyboardMarkup:
     """
-    Строит клавиатуру со списком моделей.
-    Каждая кнопка — отдельная девушка.
+    Строит клавиатуру со списком моделей + навигация по страницам.
     """
     markup = types.InlineKeyboardMarkup(row_width=1)
+
+    # Кнопки моделей текущей страницы
     for model in models:
-        label = (
-            "👩 " + model["name"] +
-            " | " + str(model["age"]) + " лет"
-        )
+        age = model.get("age", "?")
+        label = "👩 " + model["name"] + " | " + str(age) + " лет"
         markup.add(
             types.InlineKeyboardButton(
                 label,
                 callback_data="girl_" + str(model["id"])
             )
         )
+
+    # Навигация по страницам (только если больше одной страницы)
+    if total_pages > 1:
+        nav_row = []
+
+        if page > 0:
+            nav_row.append(
+                types.InlineKeyboardButton(
+                    "◀️ Назад",
+                    callback_data="girls_page_" + str(page - 1)
+                )
+            )
+
+        # Счётчик страниц — нажатие не делает ничего
+        nav_row.append(
+            types.InlineKeyboardButton(
+                str(page + 1) + "/" + str(total_pages),
+                callback_data="noop"
+            )
+        )
+
+        if page < total_pages - 1:
+            nav_row.append(
+                types.InlineKeyboardButton(
+                    "Вперёд ▶️",
+                    callback_data="girls_page_" + str(page + 1)
+                )
+            )
+
+        markup.row(*nav_row)
+
     markup.add(
         types.InlineKeyboardButton("« Главное меню", callback_data="back_to_menu")
     )
     return markup
 
 
-def get_girl_profile_keyboard(model_id: int, has_access: bool) -> types.InlineKeyboardMarkup:
+def get_girl_profile_keyboard(model_id: int, has_premium: bool, has_fan: bool) -> types.InlineKeyboardMarkup:
     """
     Клавиатура профиля модели.
-    has_access — True если у пользователя Premium подписка.
+    has_premium — полный доступ, has_fan — только превью.
     """
     markup = types.InlineKeyboardMarkup(row_width=1)
 
-    if has_access:
-        # Пользователь видит кнопку полного контента
+    if has_premium:
         markup.add(
             types.InlineKeyboardButton(
                 "🔓 Смотреть весь контент",
                 callback_data="girl_full_" + str(model_id)
             )
         )
-    else:
-        # Показываем превью и предложение подписки
+    elif has_fan:
         markup.add(
             types.InlineKeyboardButton(
                 "👁 Смотреть превью (Fan)",
                 callback_data="girl_preview_" + str(model_id)
-            ),
+            )
+        )
+        markup.add(
             types.InlineKeyboardButton(
                 "👑 Получить Premium доступ",
                 callback_data="subscription"
             )
         )
+    else:
+        markup.add(
+            types.InlineKeyboardButton(
+                "👁 Превью (нужна Fan/Premium)",
+                callback_data="girl_preview_" + str(model_id)
+            )
+        )
+        markup.add(
+            types.InlineKeyboardButton(
+                "💎 Оформить подписку",
+                callback_data="subscription"
+            )
+        )
 
+    # Кнопка Назад — всегда возвращает на первую страницу каталога
     markup.add(
         types.InlineKeyboardButton("« Назад к каталогу", callback_data="girls")
     )
@@ -79,7 +127,7 @@ def get_girl_profile_keyboard(model_id: int, has_access: bool) -> types.InlineKe
 
 
 def get_back_to_catalog_keyboard(model_id: int) -> types.InlineKeyboardMarkup:
-    """Кнопка возврата после просмотра медиа"""
+    """Кнопки навигации после просмотра медиа"""
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
         types.InlineKeyboardButton(
@@ -95,71 +143,182 @@ def get_back_to_catalog_keyboard(model_id: int) -> types.InlineKeyboardMarkup:
 
 
 # ─────────────────────────────────────────────
+# Показ страницы каталога (вынесено в отдельную функцию)
+# ─────────────────────────────────────────────
+
+def show_catalog(bot, chat_id: int, message_id: int,
+                 user_id: int, page: int = 0, edit: bool = True):
+    """
+    Показывает страницу каталога моделей.
+
+    Args:
+        bot:        экземпляр бота
+        chat_id:    id чата
+        message_id: id сообщения для редактирования
+        user_id:    id пользователя
+        page:       номер страницы (с 0)
+        edit:       True → edit_message_text, False → send_message
+    """
+    all_models = get_all_models()
+
+    if not all_models:
+        text = "😔 Моделей пока нет. Скоро появятся!"
+        if edit:
+            try:
+                bot.edit_message_text(
+                    chat_id=chat_id,
+                    message_id=message_id,
+                    text=text
+                )
+            except Exception:
+                bot.send_message(chat_id, text)
+        else:
+            bot.send_message(chat_id, text)
+        return
+
+    # Пагинация
+    total_pages = max(1, (len(all_models) + MODELS_PER_PAGE - 1) // MODELS_PER_PAGE)
+    page = max(0, min(page, total_pages - 1))  # Ограничиваем диапазон
+
+    start = page * MODELS_PER_PAGE
+    end = start + MODELS_PER_PAGE
+    page_models = all_models[start:end]
+
+    sub = check_subscription(user_id)
+
+    if sub["active"]:
+        if "premium" in sub["type"]:
+            access_text = "👑 У тебя Premium — полный доступ!"
+        else:
+            access_text = "🌸 У тебя Fan — превью профилей"
+    else:
+        access_text = "🔒 Нет подписки — только превью"
+
+    page_info = ""
+    if total_pages > 1:
+        page_info = "📄 Страница " + str(page + 1) + " из " + str(total_pages) + "\n"
+
+    text = (
+        "👭 Каталог Miss Moldova\n"
+        "━━━━━━━━━━━━━━━\n"
+        "🔥 " + str(len(all_models)) + " девушек в клубе\n"
+        + page_info +
+        "📍 " + access_text + "\n"
+        "━━━━━━━━━━━━━━━\n\n"
+        "Выбери девушку 👇"
+    )
+
+    keyboard = get_girls_list_keyboard(page_models, page, total_pages)
+
+    if edit:
+        # Стратегия: сначала пробуем edit_message_text (быстро, без мигания).
+        # Если сообщение содержит фото/медиа (caption вместо text) —
+        # Telegram вернёт 400 "there is no text in the message to edit".
+        # В этом случае удаляем старое сообщение и отправляем новое текстовое.
+        # Именно это происходит при возврате из профиля модели с фото.
+        edited = False
+        try:
+            bot.edit_message_text(
+                chat_id=chat_id,
+                message_id=message_id,
+                text=text,
+                reply_markup=keyboard
+            )
+            edited = True
+        except Exception as e:
+            err = str(e).lower()
+            if (
+                "there is no text" in err
+                or "message can't be edited" in err
+                or "message to edit not found" in err
+                or "bad request" in err
+            ):
+                # Сообщение с медиа — удаляем и шлём текстовое
+                edited = False
+            else:
+                print("[CATALOG ERROR] " + str(e))
+                edited = False
+
+        if not edited:
+            try:
+                bot.delete_message(chat_id, message_id)
+            except Exception:
+                pass
+            bot.send_message(chat_id, text, reply_markup=keyboard)
+    else:
+        bot.send_message(chat_id, text, reply_markup=keyboard)
+
+
+# ─────────────────────────────────────────────
 # Регистрация хендлеров
 # ─────────────────────────────────────────────
 
 def register_girls_handlers(bot):
 
-    # ── Каталог девушек ──────────────────────
+    # ── Каталог — первая страница ────────────
 
     @bot.callback_query_handler(func=lambda call: call.data == "girls")
     def girls_catalog(call):
-        """Показывает список всех активных моделей"""
+        """Показывает первую страницу каталога"""
+        bot.answer_callback_query(call.id)
         user_id = call.from_user.id
-
-        # Регистрируем пользователя если новый
         register_user(
             user_id,
             call.from_user.username or "",
             call.from_user.full_name or ""
         )
-
-        models = get_all_models()
-
-        if not models:
-            bot.answer_callback_query(
-                call.id,
-                "😔 Моделей пока нет. Скоро появятся!",
-                show_alert=True
-            )
-            return
-
-        sub = check_subscription(user_id)
-
-        # Заголовок меняется в зависимости от подписки
-        if sub["active"]:
-            if "premium" in sub["type"]:
-                access_text = "👑 У тебя Premium — полный доступ!"
-            else:
-                access_text = "🌸 У тебя Fan — превью профилей"
-        else:
-            access_text = "🔒 Нет подписки — только превью"
-
-        text = (
-            "👭 Каталог Miss Moldova\n"
-            "━━━━━━━━━━━━━━━\n"
-            "🔥 " + str(len(models)) + " девушек в клубе\n"
-            "📍 " + access_text + "\n"
-            "━━━━━━━━━━━━━━━\n\n"
-            "Выбери девушку 👇"
+        show_catalog(
+            bot,
+            call.message.chat.id,
+            call.message.message_id,
+            user_id,
+            page=0,
+            edit=True
         )
 
-        bot.edit_message_text(
-            chat_id=call.message.chat.id,
-            message_id=call.message.message_id,
-            text=text,
-            reply_markup=get_girls_list_keyboard(models)
+    # ── Пагинация — переход на конкретную страницу ──
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("girls_page_"))
+    def girls_page(call):
+        """Переход на указанную страницу каталога"""
+        bot.answer_callback_query(call.id)
+        user_id = call.from_user.id
+        try:
+            page = int(call.data.replace("girls_page_", ""))
+        except ValueError:
+            page = 0
+        show_catalog(
+            bot,
+            call.message.chat.id,
+            call.message.message_id,
+            user_id,
+            page=page,
+            edit=True
         )
+
+    # ── Заглушка для кнопки-счётчика страниц ──
+
+    @bot.callback_query_handler(func=lambda call: call.data == "noop")
+    def noop_handler(call):
+        """Кнопка без действия — счётчик страниц"""
+        bot.answer_callback_query(call.id)
 
     # ── Профиль конкретной модели ────────────
 
     @bot.callback_query_handler(
-        func=lambda call: call.data.startswith("girl_") and
-        not call.data.startswith("girl_preview_") and
-        not call.data.startswith("girl_full_")
+        func=lambda call: (
+            call.data.startswith("girl_")
+            and not call.data.startswith("girl_preview_")
+            and not call.data.startswith("girl_full_")
+        )
     )
     def girl_profile(call):
-        """Показывает профиль выбранной модели"""
+        """
+        Показывает профиль выбранной модели.
+        ИСПРАВЛЕНО: удаляем текущее сообщение и отправляем новое —
+        это решает проблему с кнопкой Назад (нельзя edit фото-сообщение как текст).
+        """
+        bot.answer_callback_query(call.id)
         user_id = call.from_user.id
 
         try:
@@ -170,18 +329,13 @@ def register_girls_handlers(bot):
 
         model = get_model(model_id)
         if not model:
-            bot.answer_callback_query(
-                call.id,
-                "❌ Модель не найдена",
-                show_alert=True
-            )
+            bot.answer_callback_query(call.id, "❌ Модель не найдена", show_alert=True)
             return
 
         sub = check_subscription(user_id)
         has_premium = sub["active"] and "premium" in sub.get("type", "")
         has_fan = sub["active"] and not has_premium
 
-        # Определяем уровень доступа для текста
         if has_premium:
             access_label = "👑 Полный доступ"
         elif has_fan:
@@ -189,8 +343,10 @@ def register_girls_handlers(bot):
         else:
             access_label = "🔒 Нужна подписка"
 
+        age = model.get("age", "?")
+
         text = (
-            "👩 " + model["name"] + " | " + str(model["age"]) + " лет\n"
+            "👩 " + model["name"] + " | " + str(age) + " лет\n"
             "━━━━━━━━━━━━━━━\n\n"
             "📝 " + (model.get("description") or "Описание скоро появится") + "\n\n"
             "📱 " + ("@" + model["username"] if model.get("username") else "Контакт скрыт") + "\n"
@@ -198,38 +354,49 @@ def register_girls_handlers(bot):
             "🎯 " + access_label
         )
 
-        # Если есть главное фото профиля — отправляем с фото
+        keyboard = get_girl_profile_keyboard(model_id, has_premium, has_fan)
         preview_photo = model.get("preview_photo")
 
         if preview_photo:
+            # Удаляем старое (текстовое) сообщение, отправляем фото с профилем
             try:
-                # Удаляем старое сообщение и отправляем фото с профилем
-                bot.delete_message(
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id
-                )
+                bot.delete_message(call.message.chat.id, call.message.message_id)
+            except Exception:
+                pass
+            try:
                 bot.send_photo(
                     chat_id=call.message.chat.id,
                     photo=preview_photo,
                     caption=text,
-                    reply_markup=get_girl_profile_keyboard(model_id, has_premium)
+                    reply_markup=keyboard
                 )
             except Exception as e:
                 print("[GIRLS] Ошибка отправки фото профиля: " + str(e))
                 # Fallback — текстовое сообщение
+                bot.send_message(
+                    chat_id=call.message.chat.id,
+                    text=text,
+                    reply_markup=keyboard
+                )
+        else:
+            # Нет фото — просто редактируем текст
+            try:
                 bot.edit_message_text(
                     chat_id=call.message.chat.id,
                     message_id=call.message.message_id,
                     text=text,
-                    reply_markup=get_girl_profile_keyboard(model_id, has_premium)
+                    reply_markup=keyboard
                 )
-        else:
-            bot.edit_message_text(
-                chat_id=call.message.chat.id,
-                message_id=call.message.message_id,
-                text=text,
-                reply_markup=get_girl_profile_keyboard(model_id, has_premium)
-            )
+            except Exception as e:
+                err = str(e).lower()
+                if "there is no text" in err or "message can't be edited" in err:
+                    try:
+                        bot.delete_message(call.message.chat.id, call.message.message_id)
+                    except Exception:
+                        pass
+                    bot.send_message(call.message.chat.id, text, reply_markup=keyboard)
+                else:
+                    print("[GIRLS] edit_message_text error: " + str(e))
 
     # ── Превью для Fan подписки ──────────────
 
@@ -238,20 +405,19 @@ def register_girls_handlers(bot):
     )
     def girl_preview(call):
         """
-        Показывает 3 превью фото для Fan подписки.
-        Если нет подписки вообще — отказ.
+        Показывает 3 превью фото.
+        Для Fan и Premium подписок.
         """
+        bot.answer_callback_query(call.id, "🌸 Загружаю превью...")
         user_id = call.from_user.id
 
         try:
             model_id = int(call.data.replace("girl_preview_", ""))
         except ValueError:
-            bot.answer_callback_query(call.id, "❌ Ошибка", show_alert=True)
             return
 
         sub = check_subscription(user_id)
 
-        # Проверяем наличие хотя бы Fan подписки
         if not sub["active"]:
             bot.answer_callback_query(
                 call.id,
@@ -262,20 +428,16 @@ def register_girls_handlers(bot):
 
         model = get_model(model_id)
         if not model:
-            bot.answer_callback_query(call.id, "❌ Модель не найдена", show_alert=True)
             return
 
         preview_media = get_preview_media(model_id)
 
         if not preview_media:
-            bot.answer_callback_query(
-                call.id,
-                "😔 Превью пока не добавлено",
-                show_alert=True
+            bot.send_message(
+                call.message.chat.id,
+                "😔 Превью пока не добавлено"
             )
             return
-
-        bot.answer_callback_query(call.id, "🌸 Загружаю превью...")
 
         # Отправляем превью фото по одному
         for i, media in enumerate(preview_media):
@@ -300,13 +462,15 @@ def register_girls_handlers(bot):
                         caption=caption
                     )
             except Exception as e:
-                print("[GIRLS] Ошибка отправки превью: " + str(e))
+                print("[GIRLS] Ошибка превью: " + str(e))
 
-        # Кнопки после просмотра превью
         bot.send_message(
             chat_id=call.message.chat.id,
-            text="━━━━━━━━━━━━━━━\n👆 Превью " + model["name"] + "\n\n"
-                 "Полный контент доступен по Premium 👑",
+            text=(
+                "━━━━━━━━━━━━━━━\n"
+                "👆 Превью " + model["name"] + "\n\n"
+                "Полный контент доступен по Premium 👑"
+            ),
             reply_markup=get_back_to_catalog_keyboard(model_id)
         )
 
@@ -316,48 +480,35 @@ def register_girls_handlers(bot):
         func=lambda call: call.data.startswith("girl_full_")
     )
     def girl_full_content(call):
-        """
-        Показывает весь контент модели.
-        Только для Premium подписки.
-        """
+        """Показывает весь контент модели. Только Premium."""
+        bot.answer_callback_query(call.id, "🔓 Загружаю контент...")
         user_id = call.from_user.id
 
         try:
             model_id = int(call.data.replace("girl_full_", ""))
         except ValueError:
-            bot.answer_callback_query(call.id, "❌ Ошибка", show_alert=True)
             return
 
         sub = check_subscription(user_id)
 
-        # Строгая проверка — только Premium
         if not sub["active"] or "premium" not in sub.get("type", ""):
             bot.answer_callback_query(
                 call.id,
-                "👑 Только для Premium подписчиков!\n\n"
-                "Оформи Premium в меню подписок 💎",
+                "👑 Только для Premium подписчиков!\n\nОформи Premium в меню 💎",
                 show_alert=True
             )
             return
 
         model = get_model(model_id)
         if not model:
-            bot.answer_callback_query(call.id, "❌ Модель не найдена", show_alert=True)
             return
 
         all_media = get_all_media(model_id)
 
         if not all_media:
-            bot.answer_callback_query(
-                call.id,
-                "😔 Контент пока не добавлен",
-                show_alert=True
-            )
+            bot.send_message(call.message.chat.id, "😔 Контент пока не добавлен")
             return
 
-        bot.answer_callback_query(call.id, "🔓 Загружаю контент...")
-
-        # Считаем фото и видео для заголовка
         photos = [m for m in all_media if m["media_type"] == "photo"]
         videos = [m for m in all_media if m["media_type"] == "video"]
 
@@ -368,7 +519,6 @@ def register_girls_handlers(bot):
         if videos:
             header += " | 🎥 " + str(len(videos)) + " видео"
 
-        # Отправляем весь контент по одному
         for i, media in enumerate(all_media):
             caption = header if i == 0 else None
             try:
@@ -385,9 +535,8 @@ def register_girls_handlers(bot):
                         caption=caption
                     )
             except Exception as e:
-                print("[GIRLS] Ошибка отправки медиа #" + str(i) + ": " + str(e))
+                print("[GIRLS] Ошибка медиа #" + str(i) + ": " + str(e))
 
-        # Финальное сообщение с навигацией
         bot.send_message(
             chat_id=call.message.chat.id,
             text=(

@@ -1,5 +1,6 @@
 # keyboards/inline.py
 # Все inline-клавиатуры бота
+# Добавлено: тестовая кнопка sub_test_2min — удалить перед продакшном
 
 from telebot import types
 
@@ -21,6 +22,12 @@ def get_subscription_menu() -> types.InlineKeyboardMarkup:
     """Меню выбора подписки"""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
+        # ── ТЕСТ — удалить перед продакшном ──
+        types.InlineKeyboardButton(
+            "🧪 ТЕСТ — $1 • Premium • 2 мин",
+            callback_data="sub_test_2min"
+        ),
+        # ── Боевые тарифы ────────────────────
         types.InlineKeyboardButton(
             "🌸 Fan — 30 дней ($25) • 250 💎",
             callback_data="sub_fan_30"
@@ -81,7 +88,7 @@ def get_payment_keyboard(amount_ltc: float, wallet: str) -> types.InlineKeyboard
     markup.add(
         types.InlineKeyboardButton(
             "🔗 Открыть в блокчейне",
-            url="https://blockchair.com/litecoin/address/" + wallet
+            url="https://live.blockcypher.com/ltc/address/" + wallet
         )
     )
     markup.add(
