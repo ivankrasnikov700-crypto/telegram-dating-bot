@@ -6,6 +6,9 @@
 # 3. Команда /delmodel ID для деактивации модели
 # 4. Улучшенный вывод статистики
 
+import threading
+import time
+
 from telebot import types
 from config import ADMIN_IDS
 from database.models import (
@@ -30,6 +33,75 @@ def is_admin(user_id: int) -> bool:
 
 
 def register_admin_handlers(bot):
+
+    # ── Тестовая активация подписки ──────────
+
+    @bot.message_handler(commands=['testactivate'])
+    def test_activate_command(message):
+        """
+        Прямая активация test_2min без оплаты — только для тестирования.
+        Использование: /testactivate [user_id]
+        Без user_id — активирует себе.
+        УДАЛИТЬ перед продакшном вместе с тестовой подпиской.
+        """
+        if not is_admin(message.from_user.id):
+            bot.send_message(message.chat.id, "❌ Нет доступа")
+            return
+
+        parts = message.text.split()
+        if len(parts) > 1 and parts[1].isdigit():
+            target_id = int(parts[1])
+        else:
+            target_id = message.from_user.id
+
+        from database import register_user, activate_subscription
+        register_user(target_id, "", "Test User")
+        activate_subscription(target_id, "test_2min", 0, 10, minutes=2)
+
+        bot.send_message(
+            message.chat.id,
+            "✅ Тестовая подписка активирована!\n\n"
+            "👤 User ID: " + str(target_id) + "\n"
+            "⏱ Срок: 2 минуты\n"
+            "💎 Начислено: 10 кристаллов\n\n"
+            "Уведомление об истечении придёт через 2 мин ⏰"
+        )
+
+        # Уведомляем пользователя что подписка активна
+        if target_id != message.from_user.id:
+            try:
+                from keyboards.inline import get_main_menu
+                bot.send_message(
+                    target_id,
+                    "✅ Тестовая Premium подписка активирована!\n\n"
+                    "⏱ Срок: 2 минуты\n"
+                    "💎 Начислено: 10 кристаллов\n\n"
+                    "Проверь профиль чтобы убедиться 👇",
+                    reply_markup=get_main_menu()
+                )
+            except Exception as e:
+                print("[TESTACTIVATE] Не удалось уведомить user: " + str(e))
+
+        # Запускаем уведомление об истечении
+        def _expiry_notify():
+            time.sleep(2 * 60)
+            from database import check_subscription
+            sub = check_subscription(target_id)
+            if not sub["active"]:
+                try:
+                    from keyboards.inline import get_subscription_menu
+                    notify_chat = target_id if target_id != message.from_user.id else message.chat.id
+                    bot.send_message(
+                        notify_chat,
+                        "⏰ Тестовая подписка истекла!\n\n"
+                        "Полный цикл работает корректно ✅\n\n"
+                        "Готов перейти на боевую подписку? 👇",
+                        reply_markup=get_subscription_menu()
+                    )
+                except Exception as e:
+                    print("[TESTACTIVATE EXPIRY] " + str(e))
+
+        threading.Thread(target=_expiry_notify, daemon=True).start()
 
     # ── Главная панель ───────────────────────
 

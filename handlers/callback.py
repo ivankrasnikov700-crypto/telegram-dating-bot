@@ -39,6 +39,29 @@ from telebot import types
 active_payments = {}
 
 
+def _schedule_test_expiry(bot, chat_id: int, user_id: int, minutes: int):
+    """Уведомляет пользователя когда тестовая подписка истекает."""
+    def _notify():
+        time.sleep(minutes * 60)
+        from database import check_subscription
+        sub = check_subscription(user_id)
+        if not sub["active"]:
+            try:
+                bot.send_message(
+                    chat_id,
+                    "⏰ Тестовая подписка истекла!\n\n"
+                    "Полный цикл работает корректно ✅\n\n"
+                    "Готов перейти на боевую подписку?\n"
+                    "Выбери тариф ниже 👇",
+                    reply_markup=get_subscription_menu()
+                )
+            except Exception as e:
+                print("[EXPIRY NOTIFY ERROR] " + str(e))
+
+    thread = threading.Thread(target=_notify, daemon=True)
+    thread.start()
+
+
 # ─────────────────────────────────────────────
 # Безопасное редактирование сообщения
 # ─────────────────────────────────────────────
@@ -136,6 +159,10 @@ def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict):
                         "Добро пожаловать в клуб! ❤️",
                         reply_markup=get_main_menu()
                     )
+
+                    # Для тестовой подписки — уведомляем об истечении
+                    if minutes > 0:
+                        _schedule_test_expiry(bot, chat_id, user_id, minutes)
 
                 else:  # crystals
                     total_crystals = invoice["total_crystals"]
@@ -243,8 +270,9 @@ def register_callback_handlers(bot):
         days_reg = get_days_since_registration(user_id)
 
         if sub["active"]:
-            if "premium" in sub["type"]:
-                # Для тестовой подписки показываем секунды
+            sub_type_val = sub.get("type", "")
+            is_premium = "premium" in sub_type_val or sub_type_val == "test_2min"
+            if is_premium:
                 if sub["days_left"] == 0:
                     sec = sub.get("seconds_left", 0)
                     sub_text = "👑 Premium • " + str(sec) + " сек (тест)"
@@ -280,7 +308,7 @@ def register_callback_handlers(bot):
             "━━━━━━━━━━━━━━━"
         )
 
-        has_premium = sub["active"] and "premium" in sub.get("type", "")
+        has_premium = sub["active"] and ("premium" in sub.get("type", "") or sub.get("type") == "test_2min")
         safe_edit(bot, call, text, reply_markup=get_profile_menu(has_premium))
 
     # ── Меню подписок ────────────────────────
@@ -294,11 +322,18 @@ def register_callback_handlers(bot):
         sub = check_subscription(user_id)
 
         if sub["active"]:
-            sub_name = "👑 Premium" if "premium" in sub["type"] else "🌸 Fan"
+            sub_type_val = sub.get("type", "")
+            is_test = sub_type_val == "test_2min"
+            is_premium = "premium" in sub_type_val or is_test
+            sub_name = "👑 Premium" if is_premium else "🌸 Fan"
+            if is_test:
+                time_left = str(sub.get("seconds_left", 0)) + " сек (тест)"
+            else:
+                time_left = str(sub["days_left"]) + " дней"
             text = (
                 "💎 Твоя подписка\n\n"
                 "Тип: " + sub_name + "\n"
-                "⏰ Осталось: " + str(sub["days_left"]) + " дней\n\n"
+                "⏰ Осталось: " + time_left + "\n\n"
                 "Хочешь продлить или сменить тариф?\n\n"
                 "━━━━━━━━━━━━━━━\n"
                 "🌸 Fan — 30 дней • $25 • 250 💎\n"
