@@ -123,6 +123,9 @@ def get_girl_profile_keyboard(model_id: int, has_premium: bool, has_fan: bool) -
     markup.add(
         types.InlineKeyboardButton("« Назад к каталогу", callback_data="girls")
     )
+    markup.add(
+        types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu")
+    )
     return markup
 
 
@@ -138,6 +141,9 @@ def get_back_to_catalog_keyboard(model_id: int) -> types.InlineKeyboardMarkup:
             "📋 Каталог",
             callback_data="girls"
         )
+    )
+    markup.add(
+        types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu")
     )
     return markup
 
@@ -187,7 +193,8 @@ def show_catalog(bot, chat_id: int, message_id: int,
     sub = check_subscription(user_id)
 
     if sub["active"]:
-        if "premium" in sub["type"]:
+        sub_type_val = sub.get("type", "")
+        if "premium" in sub_type_val or sub_type_val == "test_2min":
             access_text = "👑 У тебя Premium — полный доступ!"
         else:
             access_text = "🌸 У тебя Fan — превью профилей"
@@ -333,7 +340,8 @@ def register_girls_handlers(bot):
             return
 
         sub = check_subscription(user_id)
-        has_premium = sub["active"] and "premium" in sub.get("type", "")
+        sub_type = sub.get("type", "")
+        has_premium = sub["active"] and ("premium" in sub_type or sub_type == "test_2min")
         has_fan = sub["active"] and not has_premium
 
         if has_premium:
@@ -491,7 +499,8 @@ def register_girls_handlers(bot):
 
         sub = check_subscription(user_id)
 
-        if not sub["active"] or "premium" not in sub.get("type", ""):
+        sub_type = sub.get("type", "")
+        if not sub["active"] or ("premium" not in sub_type and sub_type != "test_2min"):
             bot.answer_callback_query(
                 call.id,
                 "👑 Только для Premium подписчиков!\n\nОформи Premium в меню 💎",
