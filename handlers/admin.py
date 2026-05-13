@@ -6,8 +6,11 @@
 # 3. Команда /delmodel ID для деактивации модели
 # 4. Улучшенный вывод статистики
 
+import threading
+import time
+
 from telebot import types
-from config import ADMIN_IDS
+from config import ADMIN_IDS, LTC_ADDRESS
 from database.models import (
     add_model,
     update_model,
@@ -30,6 +33,193 @@ def is_admin(user_id: int) -> bool:
 
 
 def register_admin_handlers(bot):
+
+    # ── Проверка кошелька ─────────────────────
+
+    @bot.message_handler(commands=['wallet'])
+    def wallet_command(message):
+        """Показывает текущий LTC адрес из .env"""
+        if not is_admin(message.from_user.id):
+            return
+        addr = LTC_ADDRESS or "❌ НЕ ЗАДАН"
+        bot.send_message(
+            message.chat.id,
+            "💳 Текущий LTC адрес:\n\n"
+            "`" + str(addr) + "`\n\n"
+            "Чтобы изменить — отредактируй .env:\n"
+            "LTC_ADDRESS=твой_адрес",
+            parse_mode="Markdown"
+        )
+
+    # ── Активация любой подписки вручную ─────
+
+    @bot.message_handler(commands=['activate'])
+    def activate_command(message):
+        """
+        Активирует подписку для пользователя без оплаты.
+        Использование: /activate USER_ID PLAN
+        Планы: fan_30 | premium_90 | test_2min
+        Пример: /activate 7406734422 fan_30
+        """
+        if not is_admin(message.from_user.id):
+            bot.send_message(message.chat.id, "❌ Нет доступа")
+            return
+
+        parts = message.text.split()
+        if len(parts) < 3:
+            bot.send_message(
+                message.chat.id,
+                "❌ Использование:\n"
+                "/activate USER_ID ПЛАН\n\n"
+                "Планы:\n"
+                "• fan_30 — Fan 30 дней (250 💎)\n"
+                "• premium_90 — Premium 90 дней (600 💎)\n"
+                "• test_2min — Тест 2 минуты (10 💎)\n\n"
+                "Пример:\n"
+                "/activate 7406734422 fan_30"
+            )
+            return
+
+        if not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ USER_ID должен быть числом")
+            return
+
+        target_id = int(parts[1])
+        plan = parts[2].lower()
+
+        PLANS = {
+            "fan_30":     {"name": "🌸 Fan",    "days": 30,  "minutes": 0, "crystals": 250},
+            "premium_90": {"name": "👑 Premium", "days": 90,  "minutes": 0, "crystals": 600},
+            "test_2min":  {"name": "🧪 Test",   "days": 0,   "minutes": 2, "crystals": 10},
+        }
+
+        if plan not in PLANS:
+            bot.send_message(
+                message.chat.id,
+                "❌ Неизвестный план: " + plan + "\n\n"
+                "Доступные: fan_30, premium_90, test_2min"
+            )
+            return
+
+        p = PLANS[plan]
+        from database import register_user, activate_subscription
+        register_user(target_id, "", "User")
+        activate_subscription(target_id, plan, p["days"], p["crystals"], minutes=p["minutes"])
+
+        if p["minutes"] > 0:
+            duration = str(p["minutes"]) + " минуты"
+        else:
+            duration = str(p["days"]) + " дней"
+
+        bot.send_message(
+            message.chat.id,
+            "✅ Подписка активирована!\n\n"
+            "👤 User ID: " + str(target_id) + "\n"
+            "💳 План: " + p["name"] + "\n"
+            "⏰ Срок: " + duration + "\n"
+            "💎 Кристаллов: " + str(p["crystals"])
+        )
+
+        # Уведомляем пользователя
+        try:
+            from keyboards.inline import get_main_menu
+            bot.send_message(
+                target_id,
+                "✅ Подписка " + p["name"] + " активирована!\n\n"
+                "⏰ Срок: " + duration + "\n"
+                "💎 Начислено: " + str(p["crystals"]) + " кристаллов\n\n"
+                "Добро пожаловать в клуб! ❤️",
+                reply_markup=get_main_menu()
+            )
+        except Exception as e:
+            print("[ACTIVATE] Не удалось уведомить: " + str(e))
+
+        # Для теста — запускаем уведомление об истечении
+        if p["minutes"] > 0:
+            def _expire():
+                time.sleep(p["minutes"] * 60)
+                from database import check_subscription
+                if not check_subscription(target_id)["active"]:
+                    try:
+                        from keyboards.inline import get_subscription_menu
+                        bot.send_message(
+                            target_id,
+                            "⏰ Тестовая подписка истекла!\n\n"
+                            "Полный цикл работает корректно ✅",
+                            reply_markup=get_subscription_menu()
+                        )
+                    except Exception as e:
+                        print("[ACTIVATE EXPIRY] " + str(e))
+            threading.Thread(target=_expire, daemon=True).start()
+
+    # ── Тестовая активация подписки ──────────
+
+    @bot.message_handler(commands=['testactivate'])
+    def test_activate_command(message):
+        """
+        Прямая активация test_2min без оплаты — только для тестирования.
+        Использование: /testactivate [user_id]
+        Без user_id — активирует себе.
+        УДАЛИТЬ перед продакшном вместе с тестовой подпиской.
+        """
+        if not is_admin(message.from_user.id):
+            bot.send_message(message.chat.id, "❌ Нет доступа")
+            return
+
+        parts = message.text.split()
+        if len(parts) > 1 and parts[1].isdigit():
+            target_id = int(parts[1])
+        else:
+            target_id = message.from_user.id
+
+        from database import register_user, activate_subscription
+        register_user(target_id, "", "Test User")
+        activate_subscription(target_id, "test_2min", 0, 10, minutes=2)
+
+        bot.send_message(
+            message.chat.id,
+            "✅ Тестовая подписка активирована!\n\n"
+            "👤 User ID: " + str(target_id) + "\n"
+            "⏱ Срок: 2 минуты\n"
+            "💎 Начислено: 10 кристаллов\n\n"
+            "Уведомление об истечении придёт через 2 мин ⏰"
+        )
+
+        # Уведомляем пользователя что подписка активна
+        if target_id != message.from_user.id:
+            try:
+                from keyboards.inline import get_main_menu
+                bot.send_message(
+                    target_id,
+                    "✅ Тестовая Premium подписка активирована!\n\n"
+                    "⏱ Срок: 2 минуты\n"
+                    "💎 Начислено: 10 кристаллов\n\n"
+                    "Проверь профиль чтобы убедиться 👇",
+                    reply_markup=get_main_menu()
+                )
+            except Exception as e:
+                print("[TESTACTIVATE] Не удалось уведомить user: " + str(e))
+
+        # Запускаем уведомление об истечении
+        def _expiry_notify():
+            time.sleep(2 * 60)
+            from database import check_subscription
+            sub = check_subscription(target_id)
+            if not sub["active"]:
+                try:
+                    from keyboards.inline import get_subscription_menu
+                    notify_chat = target_id if target_id != message.from_user.id else message.chat.id
+                    bot.send_message(
+                        notify_chat,
+                        "⏰ Тестовая подписка истекла!\n\n"
+                        "Полный цикл работает корректно ✅\n\n"
+                        "Готов перейти на боевую подписку? 👇",
+                        reply_markup=get_subscription_menu()
+                    )
+                except Exception as e:
+                    print("[TESTACTIVATE EXPIRY] " + str(e))
+
+        threading.Thread(target=_expiry_notify, daemon=True).start()
 
     # ── Главная панель ───────────────────────
 
