@@ -252,10 +252,10 @@ def register_admin_handlers(bot):
             message.chat.id,
             "👩 Добавление новой модели\n\n"
             "Отправь данные в формате:\n"
-            "Имя | Дата рождения или Возраст | Ник | Описание\n\n"
+            "Имя | Дата рождения или Возраст | Описание\n\n"
             "Примеры:\n"
-            "Марина | 15.05.1998 | marina_mol | Нежная и страстная 🔥\n"
-            "Анна | 24 | anna_md | Яркая красавица ✨\n\n"
+            "Марина | 15.05.1998 | Нежная и страстная 🔥\n"
+            "Анна | 24 | Яркая красавица ✨\n\n"
             "Дата рождения — возраст будет обновляться автоматически!"
         )
         admin_states[message.from_user.id] = "waiting_model_data"
@@ -321,12 +321,11 @@ def register_admin_handlers(bot):
             "Имя: " + model["name"] + "\n"
             "Возраст: " + str(age) + " лет\n"
             "Дата рождения: " + str(birth) + "\n"
-            "@" + (model["username"] or "нет") + "\n"
             "Описание: " + (model.get("description") or "нет") + "\n\n"
             "Отправь новые данные в формате:\n"
-            "Имя | Дата/Возраст | Ник | Описание\n\n"
+            "Имя | Дата/Возраст | Описание\n\n"
             "Чтобы оставить поле без изменений — напиши точку:\n"
-            ". | 12.03.1999 | . | Новое описание"
+            ". | 12.03.1999 | Новое описание"
         )
 
     # ── Деактивировать модель ────────────────
@@ -383,8 +382,7 @@ def register_admin_handlers(bot):
             message.chat.id,
             "🎉 Модель успешно добавлена!\n\n"
             "👩 Имя: " + model["name"] + "\n"
-            "🎂 Возраст: " + str(model["age"]) + " лет\n"
-            "📱 Ник: @" + (model["username"] or "нет") + "\n\n"
+            "🎂 Возраст: " + str(model["age"]) + " лет\n\n"
             "📸 Всего медиа: " + str(len(all_media)) + "\n"
             "👁 Превью Fan: " + str(len(preview_media)) + " фото\n"
             "🔒 Premium: " + str(len(all_media) - len(preview_media)) + " файлов"
@@ -401,27 +399,26 @@ def register_admin_handlers(bot):
         )
     )
     def process_model_data(message):
-        """Парсит строку: Имя | Возраст/Дата | Ник | Описание"""
+        """Парсит строку: Имя | Возраст/Дата | Описание"""
         if not is_admin(message.from_user.id):
             return
 
         try:
             parts = [p.strip() for p in message.text.split("|")]
 
-            if len(parts) < 4:
+            if len(parts) < 3:
                 bot.send_message(
                     message.chat.id,
                     "❌ Неверный формат!\n"
-                    "Нужно: Имя | Дата/Возраст | Ник | Описание"
+                    "Нужно: Имя | Дата/Возраст | Описание"
                 )
                 return
 
             name = parts[0]
             age_or_date = parts[1]
-            username = parts[2]
-            description = parts[3]
+            description = parts[2]
 
-            model_id = add_model(name, age_or_date, username, description)
+            model_id = add_model(name, age_or_date, "", description)
 
             # Показываем вычисленный возраст
             model = get_model(model_id)
@@ -434,7 +431,6 @@ def register_admin_handlers(bot):
                 "✅ Модель добавлена!\n\n"
                 "👩 Имя: " + name + "\n"
                 "🎂 Возраст: " + str(age_show) + " лет\n"
-                "📱 Ник: @" + username + "\n"
                 "🆔 ID модели: " + str(model_id) + "\n\n"
                 "Теперь отправь главное фото профиля (превью):"
             )
@@ -461,21 +457,20 @@ def register_admin_handlers(bot):
         try:
             parts = [p.strip() for p in message.text.split("|")]
 
-            if len(parts) < 4:
+            if len(parts) < 3:
                 bot.send_message(
                     message.chat.id,
                     "❌ Неверный формат!\n"
-                    "Нужно 4 поля через |. Точка = не менять."
+                    "Нужно 3 поля через |. Точка = не менять."
                 )
                 return
 
             # Точка = поле без изменений
             name = None if parts[0] == "." else parts[0]
             age_or_date = None if parts[1] == "." else parts[1]
-            username = None if parts[2] == "." else parts[2]
-            description = None if parts[3] == "." else parts[3]
+            description = None if parts[2] == "." else parts[2]
 
-            update_model(model_id, name, age_or_date, username, description)
+            update_model(model_id, name, age_or_date, None, description)
 
             del admin_states[message.from_user.id]
 
@@ -487,7 +482,6 @@ def register_admin_handlers(bot):
                     "✅ Модель обновлена!\n\n"
                     "👩 Имя: " + model["name"] + "\n"
                     "🎂 Возраст: " + str(model["age"]) + " лет\n"
-                    "📱 Ник: @" + (model["username"] or "нет") + "\n"
                     "📝 Описание: " + (model.get("description") or "нет")
                 )
         except Exception as e:
@@ -584,9 +578,9 @@ def register_admin_handlers(bot):
         bot.send_message(
             call.message.chat.id,
             "👩 Отправь данные модели:\n"
-            "Имя | Дата рождения или Возраст | Ник | Описание\n\n"
+            "Имя | Дата рождения или Возраст | Описание\n\n"
             "Пример:\n"
-            "Марина | 15.05.1998 | marina_mol | Нежная 🔥"
+            "Марина | 15.05.1998 | Нежная 🔥"
         )
         admin_states[call.from_user.id] = "waiting_model_data"
 

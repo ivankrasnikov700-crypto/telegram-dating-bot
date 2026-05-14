@@ -18,21 +18,6 @@ from config import LTC_ADDRESS
 
 SUBSCRIPTION_PRICES: dict = {
 
-    # ── ТЕСТ — удалить перед продакшном ──────
-    "test_2min": {
-        "name":        "🧪 TEST Premium",
-        "usd":         1,
-        "days":        0,
-        "minutes":     2,       # подписка на 2 минуты
-        "crystals":    10,
-        "description": "Тестовая подписка 2 минуты",
-        "perks": [
-            "🧪 2 минуты Premium доступа",
-            "💎 10 кристаллов",
-        ]
-    },
-
-    # ── Боевые тарифы ────────────────────────
     "fan_30": {
         "name":        "🌸 Fan",
         "usd":         25,

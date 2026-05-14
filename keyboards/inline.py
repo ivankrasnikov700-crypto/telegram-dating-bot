@@ -22,12 +22,6 @@ def get_subscription_menu() -> types.InlineKeyboardMarkup:
     """Меню выбора подписки"""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        # ── ТЕСТ — удалить перед продакшном ──
-        types.InlineKeyboardButton(
-            "🧪 ТЕСТ — $1 • Premium • 2 мин",
-            callback_data="sub_test_2min"
-        ),
-        # ── Боевые тарифы ────────────────────
         types.InlineKeyboardButton(
             "🌸 Fan — 30 дней ($25) • 250 💎",
             callback_data="sub_fan_30"
