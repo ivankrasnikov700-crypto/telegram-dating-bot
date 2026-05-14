@@ -1,11 +1,10 @@
 # main.py
 # Точка входа — инициализация БД, запуск планировщика, запуск бота
-# Добавлено: запуск scheduler для уведомлений об истечении подписки
 
 import logging
 import telebot
 import time
-from config import BOT_TOKEN
+from config import BOT_TOKEN, LTC_ADDRESS, ADMIN_IDS
 from database import init_db
 from database.models import init_models_db
 
@@ -14,6 +13,28 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 )
 logger = logging.getLogger(__name__)
+
+
+def _check_env():
+    """Проверяет обязательные переменные окружения перед стартом."""
+    errors = []
+    if not BOT_TOKEN:
+        errors.append("BOT_TOKEN — токен бота от @BotFather")
+    if not LTC_ADDRESS:
+        errors.append("LTC_ADDRESS — адрес LTC кошелька")
+    if not ADMIN_IDS:
+        errors.append("ADMIN_IDS — ID администраторов (через запятую)")
+    if errors:
+        print("=" * 50)
+        print("❌ ОШИБКА: не заданы переменные окружения!")
+        print("Добавь в Railway → Variables:")
+        for e in errors:
+            print("  • " + e)
+        print("=" * 50)
+        raise SystemExit(1)
+
+
+_check_env()
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
@@ -25,26 +46,22 @@ from utils.scheduler import start_scheduler, add_scheduler_columns
 
 
 def main():
-    # Инициализация и миграции БД
     init_db()
     init_models_db()
-
-    # Миграция: добавляем колонку subscription_notified если нет
     add_scheduler_columns()
 
-    # Регистрация хендлеров
     register_start_handlers(bot)
     register_callback_handlers(bot)
     register_admin_handlers(bot)
     register_girls_handlers(bot)
 
-    # Запуск планировщика уведомлений в фоне
     start_scheduler(bot)
 
     print("✅ Бот Miss Moldova запущен!")
+    print("💳 LTC: " + str(LTC_ADDRESS))
+    print("👑 Admins: " + str(ADMIN_IDS))
     logger.info("Bot started")
 
-    # Автоперезапуск при падении
     while True:
         try:
             bot.infinity_polling(timeout=60, long_polling_timeout=60)
