@@ -193,7 +193,7 @@ def show_catalog(bot, chat_id: int, message_id: int,
     sub = check_subscription(user_id)
 
     if sub["active"]:
-        sub_type_val = sub.get("type", "")
+        sub_type_val = sub.get("type") or ""
         if "premium" in sub_type_val or sub_type_val == "test_2min":
             access_text = "👑 У тебя Premium — полный доступ!"
         else:
@@ -340,7 +340,7 @@ def register_girls_handlers(bot):
             return
 
         sub = check_subscription(user_id)
-        sub_type = sub.get("type", "")
+        sub_type = sub.get("type") or ""
         has_premium = sub["active"] and ("premium" in sub_type or sub_type == "test_2min")
         has_fan = sub["active"] and not has_premium
 
@@ -499,7 +499,7 @@ def register_girls_handlers(bot):
 
         sub = check_subscription(user_id)
 
-        sub_type = sub.get("type", "")
+        sub_type = sub.get("type") or ""
         if not sub["active"] or ("premium" not in sub_type and sub_type != "test_2min"):
             bot.answer_callback_query(
                 call.id,

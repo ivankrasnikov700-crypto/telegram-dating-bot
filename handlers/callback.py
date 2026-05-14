@@ -270,7 +270,7 @@ def register_callback_handlers(bot):
         days_reg = get_days_since_registration(user_id)
 
         if sub["active"]:
-            sub_type_val = sub.get("type", "")
+            sub_type_val = sub.get("type") or ""
             is_premium = "premium" in sub_type_val or sub_type_val == "test_2min"
             if is_premium:
                 if sub["days_left"] == 0:
@@ -308,7 +308,7 @@ def register_callback_handlers(bot):
             "━━━━━━━━━━━━━━━"
         )
 
-        has_premium = sub["active"] and ("premium" in sub.get("type", "") or sub.get("type") == "test_2min")
+        has_premium = sub["active"] and ("premium" in (sub.get("type") or "") or sub.get("type") == "test_2min")
         safe_edit(bot, call, text, reply_markup=get_profile_menu(has_premium))
 
     # ── Меню подписок ────────────────────────
@@ -322,7 +322,7 @@ def register_callback_handlers(bot):
         sub = check_subscription(user_id)
 
         if sub["active"]:
-            sub_type_val = sub.get("type", "")
+            sub_type_val = sub.get("type") or ""
             is_test = sub_type_val == "test_2min"
             is_premium = "premium" in sub_type_val or is_test
             sub_name = "👑 Premium" if is_premium else "🌸 Fan"
