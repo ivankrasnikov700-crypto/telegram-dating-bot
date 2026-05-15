@@ -1,12 +1,14 @@
 # keyboards/inline.py
 # Все inline-клавиатуры бота
-# Добавлено: тестовая кнопка sub_test_2min — удалить перед продакшном
 
 from telebot import types
 
+# Курс обмена: 20 MDL = 1 USDT
+LEI_RATE = 20
+EXCHANGE_ADMIN = "Viktoria11051"
+
 
 def get_main_menu() -> types.InlineKeyboardMarkup:
-    """Главное меню"""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("💎 Подписка", callback_data="subscription"),
@@ -20,7 +22,6 @@ def get_main_menu() -> types.InlineKeyboardMarkup:
 
 
 def get_subscription_menu() -> types.InlineKeyboardMarkup:
-    """Меню выбора подписки"""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton(
@@ -31,16 +32,12 @@ def get_subscription_menu() -> types.InlineKeyboardMarkup:
             "👑 Premium — 90 дней ($50) • 600 💎",
             callback_data="sub_premium_90"
         ),
-        types.InlineKeyboardButton(
-            "« Назад",
-            callback_data="back_to_menu"
-        )
+        types.InlineKeyboardButton("« Назад", callback_data="back_to_menu")
     )
     return markup
 
 
 def get_crystal_packs_menu() -> types.InlineKeyboardMarkup:
-    """Меню покупки кристаллов"""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton(
@@ -59,26 +56,60 @@ def get_crystal_packs_menu() -> types.InlineKeyboardMarkup:
             "💎 650 кристаллов — $50 (+150 бонус)",
             callback_data="crystal_pack_650"
         ),
+        types.InlineKeyboardButton("« Назад", callback_data="back_to_menu")
+    )
+    return markup
+
+
+def get_payment_method_keyboard(plan_key: str, back_callback: str) -> types.InlineKeyboardMarkup:
+    """Выбор способа оплаты: LTC-крипта или обмен через карту."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
         types.InlineKeyboardButton(
-            "« Назад",
-            callback_data="back_to_menu"
-        )
+            "🔷 Оплатить криптой (LTC)",
+            callback_data="ltc_" + plan_key
+        ),
+        types.InlineKeyboardButton(
+            "💳 Обмен — Mastercard / Visa",
+            callback_data="exch_" + plan_key
+        ),
+        types.InlineKeyboardButton("« Назад", callback_data=back_callback)
+    )
+    return markup
+
+
+def get_exchange_card_keyboard(plan_key: str) -> types.InlineKeyboardMarkup:
+    """Выбор типа карты для обмена."""
+    markup = types.InlineKeyboardMarkup(row_width=2)
+    markup.add(
+        types.InlineKeyboardButton("💳 Mastercard", callback_data="mc_" + plan_key),
+        types.InlineKeyboardButton("💳 Visa",       callback_data="vi_" + plan_key)
+    )
+    markup.add(
+        types.InlineKeyboardButton("« Назад", callback_data=plan_key)
+    )
+    return markup
+
+
+def get_exchange_contact_keyboard() -> types.InlineKeyboardMarkup:
+    """Кнопка связи с администратором обмена + главное меню."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    markup.add(
+        types.InlineKeyboardButton(
+            "💬 Написать @" + EXCHANGE_ADMIN,
+            url="https://t.me/" + EXCHANGE_ADMIN
+        ),
+        types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu")
     )
     return markup
 
 
 def get_payment_keyboard(amount_ltc: float, wallet: str) -> types.InlineKeyboardMarkup:
-    """Клавиатура для оплаты"""
+    """Клавиатура оплаты LTC."""
     markup = types.InlineKeyboardMarkup(row_width=2)
     markup.add(
-        types.InlineKeyboardButton(
-            "📋 Копировать адрес",
-            callback_data="copy_wallet"
-        ),
-        types.InlineKeyboardButton(
-            "💰 Копировать сумму",
-            callback_data="copy_amount_" + str(amount_ltc)
-        )
+        types.InlineKeyboardButton("📋 Копировать адрес",  callback_data="copy_wallet"),
+        types.InlineKeyboardButton("💰 Копировать сумму",  callback_data="copy_amount_" + str(amount_ltc))
     )
     markup.add(
         types.InlineKeyboardButton(
@@ -87,56 +118,30 @@ def get_payment_keyboard(amount_ltc: float, wallet: str) -> types.InlineKeyboard
         )
     )
     markup.add(
-        types.InlineKeyboardButton(
-            "✅ Я оплатил",
-            callback_data="payment_confirmed"
-        ),
-        types.InlineKeyboardButton(
-            "❌ Отмена",
-            callback_data="back_to_menu"
-        )
+        types.InlineKeyboardButton("✅ Я оплатил", callback_data="payment_confirmed"),
+        types.InlineKeyboardButton("❌ Отмена",    callback_data="back_to_menu")
     )
     return markup
 
 
 def get_profile_menu(has_premium: bool = False) -> types.InlineKeyboardMarkup:
-    """Меню профиля пользователя"""
     markup = types.InlineKeyboardMarkup(row_width=1)
     if not has_premium:
         markup.add(
-            types.InlineKeyboardButton(
-                "💎 Оформить подписку",
-                callback_data="subscription"
-            )
+            types.InlineKeyboardButton("💎 Оформить подписку", callback_data="subscription")
         )
     markup.add(
-        types.InlineKeyboardButton(
-            "💎 Купить кристаллы",
-            callback_data="buy_crystals"
-        ),
-        types.InlineKeyboardButton(
-            "📊 История транзакций",
-            callback_data="crystal_history"
-        ),
-        types.InlineKeyboardButton(
-            "« Назад",
-            callback_data="back_to_menu"
-        )
+        types.InlineKeyboardButton("💎 Купить кристаллы",    callback_data="buy_crystals"),
+        types.InlineKeyboardButton("📊 История транзакций",  callback_data="crystal_history"),
+        types.InlineKeyboardButton("« Назад",                callback_data="back_to_menu")
     )
     return markup
 
 
 def get_confirmation_menu() -> types.InlineKeyboardMarkup:
-    """Меню подтверждения оплаты"""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
-        types.InlineKeyboardButton(
-            "✅ Я оплатил",
-            callback_data="payment_confirmed"
-        ),
-        types.InlineKeyboardButton(
-            "❌ Отмена",
-            callback_data="back_to_menu"
-        )
+        types.InlineKeyboardButton("✅ Я оплатил", callback_data="payment_confirmed"),
+        types.InlineKeyboardButton("❌ Отмена",    callback_data="back_to_menu")
     )
     return markup

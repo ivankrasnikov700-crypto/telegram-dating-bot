@@ -13,7 +13,12 @@ from keyboards.inline import (
     get_subscription_menu,
     get_crystal_packs_menu,
     get_payment_keyboard,
-    get_profile_menu
+    get_profile_menu,
+    get_payment_method_keyboard,
+    get_exchange_card_keyboard,
+    get_exchange_contact_keyboard,
+    LEI_RATE,
+    EXCHANGE_ADMIN
 )
 from utils.payments import (
     generate_payment_invoice,
@@ -378,55 +383,52 @@ def register_callback_handlers(bot):
 
         safe_edit(bot, call, text, reply_markup=get_subscription_menu())
 
-    # ── Выбор подписки → генерация счёта ────
+    # ── Выбор подписки → выбор метода оплаты ────
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("sub_"))
     def handle_subscription(call):
-        bot.answer_callback_query(call.id, "⏳ Генерируем счёт...")
-        sub_type = call.data.replace("sub_", "")
-        user_id  = call.from_user.id
+        bot.answer_callback_query(call.id)
+        sub_type = call.data[4:]   # "fan_30" / "premium_90"
+        plan_key = "sub_" + sub_type
 
+        from utils.payments import SUBSCRIPTION_PRICES
+        info = SUBSCRIPTION_PRICES.get(sub_type, SUBSCRIPTION_PRICES["fan_30"])
+        lei  = info["usd"] * LEI_RATE
+
+        text = (
+            "💎 " + info["name"] + " — " + str(info["days"]) + " дней\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "💰 Стоимость: $" + str(info["usd"]) + " USD\n\n"
+            "Выбери способ оплаты:\n\n"
+            "🔷 Крипта (LTC) — по актуальному курсу\n"
+            "💳 Обмен — " + str(lei) + " лей\n"
+            "    (курс: 20 лей = 1 USDT)"
+        )
+        safe_edit(bot, call, text,
+                  reply_markup=get_payment_method_keyboard(plan_key, "subscription"))
+
+    # ── LTC оплата подписки ───────────────────
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("ltc_sub_"))
+    def handle_ltc_subscription(call):
+        bot.answer_callback_query(call.id, "⏳ Генерируем счёт...")
+        sub_type = call.data[8:]   # strip "ltc_sub_"
+        user_id  = call.from_user.id
         register_user(user_id, call.from_user.username or "", call.from_user.full_name or "")
 
         invoice = generate_payment_invoice(sub_type, user_id)
-
-        save_payment(
-            user_id,
-            invoice["payment_id"],
-            sub_type,
-            invoice["amount_ltc"],
-            invoice["amount_usd"],
-            invoice["crystals"]
-        )
-
+        save_payment(user_id, invoice["payment_id"], sub_type,
+                     invoice["amount_ltc"], invoice["amount_usd"], invoice["crystals"])
         active_payments[user_id] = invoice
 
-        safe_edit(
-            bot, call,
-            format_payment_message(invoice),
-            reply_markup=get_payment_keyboard(invoice["amount_ltc"], invoice["wallet"]),
-            parse_mode="Markdown"
-        )
+        safe_edit(bot, call, format_payment_message(invoice),
+                  reply_markup=get_payment_keyboard(invoice["amount_ltc"], invoice["wallet"]),
+                  parse_mode="Markdown")
 
-        minutes = invoice.get("minutes", 0)
+        minutes  = invoice.get("minutes", 0)
         duration = str(minutes) + " мин (тест)" if minutes > 0 else str(invoice["days"]) + " дней"
-        for admin_id in ADMIN_IDS:
-            try:
-                bot.send_message(
-                    admin_id,
-                    "🔔 Новый счёт на подписку\n\n"
-                    "👤 User: " + str(user_id) + "\n"
-                    "💳 Тариф: " + invoice["sub_name"] + "\n"
-                    "⏰ Срок: " + duration + "\n"
-                    "💰 Сумма: " + str(invoice["amount_ltc"]) + " LTC\n"
-                    "🆔 ID: " + invoice["payment_id"]
-                )
-            except Exception as e:
-                print("[ADMIN NOTIFY ERROR] " + str(e))
-
-        notify_channel(
-            bot,
-            "🔔 Новый счёт на подписку\n"
+        notify_text = (
+            "🔔 Новый счёт на подписку (LTC)\n"
             "━━━━━━━━━━━━━━━\n"
             "👤 User: " + str(user_id) + "\n"
             "💳 Тариф: " + invoice["sub_name"] + "\n"
@@ -434,13 +436,89 @@ def register_callback_handlers(bot):
             "💰 Сумма: " + str(invoice["amount_ltc"]) + " LTC\n"
             "🆔 ID: " + invoice["payment_id"]
         )
+        for admin_id in ADMIN_IDS:
+            try: bot.send_message(admin_id, notify_text)
+            except Exception as e: print("[ADMIN NOTIFY] " + str(e))
+        notify_channel(bot, notify_text)
 
-        thread = threading.Thread(
-            target=monitor_payment,
-            args=(bot, call.message.chat.id, user_id, invoice),
-            daemon=True
+        threading.Thread(target=monitor_payment,
+                         args=(bot, call.message.chat.id, user_id, invoice),
+                         daemon=True).start()
+
+    # ── Обмен подписки → выбор карты ─────────
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("exch_sub_"))
+    def handle_exchange_sub(call):
+        bot.answer_callback_query(call.id)
+        sub_type = call.data[9:]   # strip "exch_sub_"
+        plan_key = "sub_" + sub_type
+
+        from utils.payments import SUBSCRIPTION_PRICES
+        info = SUBSCRIPTION_PRICES.get(sub_type, SUBSCRIPTION_PRICES["fan_30"])
+        lei  = info["usd"] * LEI_RATE
+
+        text = (
+            "💳 Обмен — выбор карты\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "📋 " + info["name"] + " — " + str(info["days"]) + " дней\n"
+            "💰 Сумма: " + str(lei) + " лей (" + str(info["usd"]) + " USDT)\n"
+            "📈 Курс: 20 лей = 1 USDT\n\n"
+            "Выбери тип карты для перевода:"
         )
-        thread.start()
+        safe_edit(bot, call, text, reply_markup=get_exchange_card_keyboard(plan_key))
+
+    # ── Обмен подписки — детали (MC/Visa) ────
+
+    @bot.callback_query_handler(
+        func=lambda call: (
+            call.data.startswith("mc_sub_") or call.data.startswith("vi_sub_")
+        )
+    )
+    def handle_exchange_sub_card(call):
+        bot.answer_callback_query(call.id)
+        user_id = call.from_user.id
+
+        if call.data.startswith("mc_sub_"):
+            card     = "Mastercard"
+            sub_type = call.data[7:]  # strip "mc_sub_"
+        else:
+            card     = "Visa"
+            sub_type = call.data[7:]  # strip "vi_sub_"
+
+        from utils.payments import SUBSCRIPTION_PRICES
+        info = SUBSCRIPTION_PRICES.get(sub_type, SUBSCRIPTION_PRICES["fan_30"])
+        lei  = info["usd"] * LEI_RATE
+
+        text = (
+            "💳 Оплата через обмен\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "📋 Тариф: " + info["name"] + " — " + str(info["days"]) + " дней\n"
+            "💰 Сумма: " + str(lei) + " лей (" + str(info["usd"]) + " USDT)\n"
+            "💳 Карта: " + card + "\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "📝 Как оплатить:\n\n"
+            "1️⃣  Нажми кнопку ниже и напиши @" + EXCHANGE_ADMIN + "\n"
+            "2️⃣  Скажи: хочу " + info["name"] + " на " + str(info["days"]) + " дней\n"
+            "3️⃣  Переведи " + str(lei) + " лей на карту " + card + "\n"
+            "4️⃣  Отправь скриншот перевода\n\n"
+            "✅ После подтверждения — подписка активируется!"
+        )
+        safe_edit(bot, call, text, reply_markup=get_exchange_contact_keyboard())
+
+        username = call.from_user.username
+        user_ref = "@" + username if username else "ID " + str(user_id)
+        notify_text = (
+            "💳 Запрос на обмен — подписка\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👤 " + user_ref + " (ID: " + str(user_id) + ")\n"
+            "📋 " + info["name"] + " — " + str(info["days"]) + " дней\n"
+            "💰 " + str(lei) + " лей (" + str(info["usd"]) + " USDT)\n"
+            "💳 Карта: " + card
+        )
+        for admin_id in ADMIN_IDS:
+            try: bot.send_message(admin_id, notify_text)
+            except Exception as e: print("[EXCHANGE NOTIFY] " + str(e))
+        notify_channel(bot, notify_text)
 
     # ── Меню покупки кристаллов ──────────────
 
@@ -460,64 +538,148 @@ def register_callback_handlers(bot):
         )
         safe_edit(bot, call, text, reply_markup=get_crystal_packs_menu())
 
-    # ── Выбор пакета кристаллов ──────────────
+    # ── Выбор пакета кристаллов → метод оплаты ──
 
     @bot.callback_query_handler(func=lambda call: call.data.startswith("crystal_pack_"))
     def handle_crystal_pack(call):
-        bot.answer_callback_query(call.id, "⏳ Генерируем счёт...")
-        pack_type = call.data.replace("crystal_", "")
-        user_id   = call.from_user.id
+        bot.answer_callback_query(call.id)
+        num       = call.data[13:]          # "50" / "120" / "300" / "650"
+        pack_type = "pack_" + num           # "pack_50" etc.
+        plan_key  = "crystal_pack_" + num   # полный callback для back-кнопки
 
+        from utils.payments import CRYSTAL_PACKS
+        info = CRYSTAL_PACKS.get(pack_type, CRYSTAL_PACKS["pack_50"])
+        lei  = info["usd"] * LEI_RATE
+        total = info["crystals"] + info["bonus"]
+
+        bonus_text = (" (+" + str(info["bonus"]) + " бонус)") if info["bonus"] > 0 else ""
+        text = (
+            "💎 " + str(total) + " кристаллов" + bonus_text + "\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "💰 Стоимость: $" + str(info["usd"]) + " USD\n\n"
+            "Выбери способ оплаты:\n\n"
+            "🔷 Крипта (LTC) — по актуальному курсу\n"
+            "💳 Обмен — " + str(lei) + " лей\n"
+            "    (курс: 20 лей = 1 USDT)"
+        )
+        safe_edit(bot, call, text,
+                  reply_markup=get_payment_method_keyboard(plan_key, "buy_crystals"))
+
+    # ── LTC оплата кристаллов ─────────────────
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("ltc_crystal_"))
+    def handle_ltc_crystal(call):
+        bot.answer_callback_query(call.id, "⏳ Генерируем счёт...")
+        num       = call.data[12:]   # strip "ltc_crystal_" → "50" etc.
+        pack_type = "pack_" + num
+        user_id   = call.from_user.id
         register_user(user_id, call.from_user.username or "", call.from_user.full_name or "")
 
         invoice = generate_crystal_invoice(pack_type, user_id)
+        save_payment(user_id, invoice["payment_id"], pack_type,
+                     invoice["amount_ltc"], invoice["amount_usd"], invoice["total_crystals"])
         active_payments[user_id] = invoice
 
-        save_payment(
-            user_id,
-            invoice["payment_id"],
-            pack_type,
-            invoice["amount_ltc"],
-            invoice["amount_usd"],
-            invoice["total_crystals"]
-        )
+        safe_edit(bot, call, format_payment_message(invoice),
+                  reply_markup=get_payment_keyboard(invoice["amount_ltc"], invoice["wallet"]),
+                  parse_mode="Markdown")
 
-        safe_edit(
-            bot, call,
-            format_payment_message(invoice),
-            reply_markup=get_payment_keyboard(invoice["amount_ltc"], invoice["wallet"]),
-            parse_mode="Markdown"
-        )
-
-        for admin_id in ADMIN_IDS:
-            try:
-                bot.send_message(
-                    admin_id,
-                    "🔔 Покупка кристаллов\n\n"
-                    "👤 User: " + str(user_id) + "\n"
-                    "💎 Кристаллов: " + str(invoice["total_crystals"]) + "\n"
-                    "💰 Сумма: " + str(invoice["amount_ltc"]) + " LTC\n"
-                    "🆔 ID: " + invoice["payment_id"]
-                )
-            except Exception as e:
-                print("[ADMIN NOTIFY ERROR] " + str(e))
-
-        notify_channel(
-            bot,
-            "🔔 Покупка кристаллов\n"
+        notify_text = (
+            "🔔 Покупка кристаллов (LTC)\n"
             "━━━━━━━━━━━━━━━\n"
             "👤 User: " + str(user_id) + "\n"
             "💎 Кристаллов: " + str(invoice["total_crystals"]) + "\n"
             "💰 Сумма: " + str(invoice["amount_ltc"]) + " LTC\n"
             "🆔 ID: " + invoice["payment_id"]
         )
+        for admin_id in ADMIN_IDS:
+            try: bot.send_message(admin_id, notify_text)
+            except Exception as e: print("[ADMIN NOTIFY] " + str(e))
+        notify_channel(bot, notify_text)
 
-        thread = threading.Thread(
-            target=monitor_payment,
-            args=(bot, call.message.chat.id, user_id, invoice),
-            daemon=True
+        threading.Thread(target=monitor_payment,
+                         args=(bot, call.message.chat.id, user_id, invoice),
+                         daemon=True).start()
+
+    # ── Обмен кристаллов → выбор карты ───────
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("exch_crystal_"))
+    def handle_exchange_crystal(call):
+        bot.answer_callback_query(call.id)
+        num       = call.data[13:]   # strip "exch_crystal_"
+        pack_type = "pack_" + num
+        plan_key  = "crystal_pack_" + num
+
+        from utils.payments import CRYSTAL_PACKS
+        info  = CRYSTAL_PACKS.get(pack_type, CRYSTAL_PACKS["pack_50"])
+        lei   = info["usd"] * LEI_RATE
+        total = info["crystals"] + info["bonus"]
+
+        text = (
+            "💳 Обмен — выбор карты\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "💎 " + str(total) + " кристаллов\n"
+            "💰 Сумма: " + str(lei) + " лей (" + str(info["usd"]) + " USDT)\n"
+            "📈 Курс: 20 лей = 1 USDT\n\n"
+            "Выбери тип карты для перевода:"
         )
-        thread.start()
+        safe_edit(bot, call, text, reply_markup=get_exchange_card_keyboard(plan_key))
+
+    # ── Обмен кристаллов — детали (MC/Visa) ──
+
+    @bot.callback_query_handler(
+        func=lambda call: (
+            call.data.startswith("mc_crystal_") or call.data.startswith("vi_crystal_")
+        )
+    )
+    def handle_exchange_crystal_card(call):
+        bot.answer_callback_query(call.id)
+        user_id = call.from_user.id
+
+        if call.data.startswith("mc_crystal_"):
+            card = "Mastercard"
+            num  = call.data[11:]   # strip "mc_crystal_"
+        else:
+            card = "Visa"
+            num  = call.data[11:]   # strip "vi_crystal_"
+
+        pack_type = "pack_" + num
+        from utils.payments import CRYSTAL_PACKS
+        info  = CRYSTAL_PACKS.get(pack_type, CRYSTAL_PACKS["pack_50"])
+        lei   = info["usd"] * LEI_RATE
+        total = info["crystals"] + info["bonus"]
+        bonus_text = (" (+" + str(info["bonus"]) + " бонус)") if info["bonus"] > 0 else ""
+
+        text = (
+            "💳 Оплата через обмен\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "💎 " + str(total) + " кристаллов" + bonus_text + "\n"
+            "💰 Сумма: " + str(lei) + " лей (" + str(info["usd"]) + " USDT)\n"
+            "💳 Карта: " + card + "\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "📝 Как оплатить:\n\n"
+            "1️⃣  Нажми кнопку ниже и напиши @" + EXCHANGE_ADMIN + "\n"
+            "2️⃣  Скажи: хочу купить " + str(total) + " кристаллов\n"
+            "3️⃣  Переведи " + str(lei) + " лей на карту " + card + "\n"
+            "4️⃣  Отправь скриншот перевода\n\n"
+            "✅ После подтверждения — кристаллы зачислятся!"
+        )
+        safe_edit(bot, call, text, reply_markup=get_exchange_contact_keyboard())
+
+        username = call.from_user.username
+        user_ref = "@" + username if username else "ID " + str(user_id)
+        notify_text = (
+            "💳 Запрос на обмен — кристаллы\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👤 " + user_ref + " (ID: " + str(user_id) + ")\n"
+            "💎 " + str(total) + " кристаллов" + bonus_text + "\n"
+            "💰 " + str(lei) + " лей (" + str(info["usd"]) + " USDT)\n"
+            "💳 Карта: " + card
+        )
+        for admin_id in ADMIN_IDS:
+            try: bot.send_message(admin_id, notify_text)
+            except Exception as e: print("[EXCHANGE NOTIFY] " + str(e))
+        notify_channel(bot, notify_text)
 
     # ── Копировать адрес ─────────────────────
 
