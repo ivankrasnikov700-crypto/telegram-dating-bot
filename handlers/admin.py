@@ -52,17 +52,15 @@ def register_admin_handlers(bot):
 
     @bot.message_handler(commands=['wallet'])
     def wallet_command(message):
-        """Показывает текущий LTC адрес из .env"""
         if not is_admin(message.from_user.id):
             return
-        addr = LTC_ADDRESS or "❌ НЕ ЗАДАН"
+        from config import MEDIA_CHANNEL_ID, ADMIN_CHANNEL_ID
+        addr = LTC_ADDRESS or "НЕ ЗАДАН"
         bot.send_message(
             message.chat.id,
-            "💳 Текущий LTC адрес:\n\n"
-            "`" + str(addr) + "`\n\n"
-            "Чтобы изменить — отредактируй .env:\n"
-            "LTC_ADDRESS=твой_адрес",
-            parse_mode="Markdown"
+            "💳 LTC адрес:\n" + str(addr) + "\n\n"
+            "📡 Медиа канал ID: " + str(MEDIA_CHANNEL_ID) + "\n"
+            "🔒 Админ канал ID: " + str(ADMIN_CHANNEL_ID)
         )
 
     # ── Активация любой подписки вручную ─────
