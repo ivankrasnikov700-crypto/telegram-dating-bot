@@ -354,6 +354,52 @@ def register_admin_handlers(bot):
             "Она скрыта из каталога. Данные не удалены."
         )
 
+    # ── Заменить главное фото модели ────────
+
+    @bot.message_handler(commands=['setphoto'])
+    def set_photo_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Укажи ID: /setphoto 3")
+            return
+        model_id = int(parts[1])
+        model = get_model(model_id)
+        if not model:
+            bot.send_message(message.chat.id, "❌ Модель не найдена")
+            return
+        admin_states[message.from_user.id] = "waiting_preview_photo_" + str(model_id)
+        bot.send_message(
+            message.chat.id,
+            "📸 Отправь новое главное фото для " + model["name"] + ":"
+        )
+
+    # ── Добавить медиа к существующей модели ─
+
+    @bot.message_handler(commands=['addmedia'])
+    def add_media_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Укажи ID: /addmedia 3")
+            return
+        model_id = int(parts[1])
+        model = get_model(model_id)
+        if not model:
+            bot.send_message(message.chat.id, "❌ Модель не найдена")
+            return
+        admin_states[message.from_user.id] = "waiting_media_" + str(model_id)
+        all_media = get_all_media(model_id)
+        bot.send_message(
+            message.chat.id,
+            "📎 Добавление медиа к " + model["name"] + "\n\n"
+            "Уже загружено: " + str(len(all_media)) + " файлов\n"
+            "Первые 3 — Fan превью, остальные — Premium\n\n"
+            "Отправляй фото/видео. Готово → /done"
+        )
+
     # ── Завершить загрузку медиа ─────────────
 
     @bot.message_handler(commands=['done'])
