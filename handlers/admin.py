@@ -11,6 +11,8 @@ import time
 
 from telebot import types
 from config import ADMIN_IDS, LTC_ADDRESS
+from database.reviews import add_review, get_reviews, delete_review
+from utils.notify import notify_channel
 from database.models import (
     add_model,
     update_model,
@@ -133,6 +135,16 @@ def register_admin_handlers(bot):
             )
         except Exception as e:
             print("[ACTIVATE] Не удалось уведомить: " + str(e))
+
+        notify_channel(
+            bot,
+            "👑 Подписка активирована вручную\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👤 User: " + str(target_id) + "\n"
+            "💳 План: " + p["name"] + "\n"
+            "⏰ Срок: " + duration + "\n"
+            "👮 Активировал: " + str(message.from_user.id)
+        )
 
         # Для теста — запускаем уведомление об истечении
         if p["minutes"] > 0:
@@ -437,6 +449,15 @@ def register_admin_handlers(bot):
                 "📱 Ник: @" + username + "\n"
                 "🆔 ID модели: " + str(model_id) + "\n\n"
                 "Теперь отправь главное фото профиля (превью):"
+            )
+
+            notify_channel(
+                bot,
+                "👩 Новая модель добавлена!\n"
+                "━━━━━━━━━━━━━━━\n"
+                "Имя: " + name + "\n"
+                "Возраст: " + str(age_show) + " лет\n"
+                "ID: " + str(model_id)
             )
 
         except Exception as e:

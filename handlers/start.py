@@ -3,6 +3,8 @@
 
 from telebot import types
 from keyboards.inline import get_main_menu
+from database import register_user
+from utils.notify import notify_channel
 
 
 def register_start_handlers(bot):
@@ -10,6 +12,20 @@ def register_start_handlers(bot):
     @bot.message_handler(commands=['start'])
     def start(message):
         """Отправляет приветственное сообщение с главным меню"""
+        user_id = message.from_user.id
+        username = message.from_user.username or ""
+        full_name = message.from_user.full_name or ""
+        register_user(user_id, username, full_name)
+
+        user_ref = ("@" + username) if username else full_name
+        notify_channel(
+            bot,
+            "👤 Новый пользователь!\n"
+            "━━━━━━━━━━━━━━━\n"
+            "🏷 " + user_ref + "\n"
+            "🆔 ID: " + str(user_id)
+        )
+
         markup = get_main_menu()
         bot.send_message(
             message.chat.id,
@@ -23,8 +39,7 @@ def register_start_handlers(bot):
             "кто ценит настоящую красоту\n\n"
             "━━━━━━━━━━━━━━━\n"
             "🔥 Что тебя ждёт внутри:\n"
-            "• 📸 Эксклюзивные фото и видео\n"
-            "Слив моделей ,мисс Молдова\n"
+            "• 📸 Эксклюзивные фото и видео моделей Miss Moldova\n"
             "• 👑 Контент который нигде больше не найдёшь\n"
             "• 🚀 Новинки каждую неделю\n"
             "• 💬 Личное общение с моделями\n"

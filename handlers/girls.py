@@ -16,6 +16,7 @@ from database.models import (
     get_preview_media,
     get_all_media
 )
+from utils.notify import notify_channel
 
 # Количество моделей на одной странице каталога
 MODELS_PER_PAGE = 5
@@ -554,4 +555,82 @@ def register_girls_handlers(bot):
                 "🔥 Новый контент выходит каждую неделю!"
             ),
             reply_markup=get_back_to_catalog_keyboard(model_id)
+        )
+
+    # ── Написать девушке ─────────────────────
+
+    @bot.callback_query_handler(
+        func=lambda call: call.data.startswith("contact_girl_")
+    )
+    def contact_girl(call):
+        """Запрос на знакомство — уведомляет админа, показывает попап."""
+        user_id = call.from_user.id
+
+        try:
+            model_id = int(call.data.replace("contact_girl_", ""))
+        except ValueError:
+            bot.answer_callback_query(call.id)
+            return
+
+        sub = check_subscription(user_id)
+        if not sub["active"]:
+            bot.answer_callback_query(
+                call.id,
+                "🔒 Для связи с девушками нужна подписка\n\nОформи Fan или Premium 💎",
+                show_alert=True
+            )
+            return
+
+        model = get_model(model_id)
+        if not model:
+            bot.answer_callback_query(call.id)
+            return
+
+        bot.answer_callback_query(
+            call.id,
+            "💌 Запрос принят!\n\n"
+            "Администрация Miss Moldova свяжется с тобой в ближайшее время.\n\n"
+            "Ожидай сообщения ❤️",
+            show_alert=True
+        )
+
+        username = call.from_user.username
+        full_name = call.from_user.full_name or "Пользователь"
+        user_ref = "@" + username if username else full_name
+        sub_type = sub.get("type") or ""
+        sub_name = "👑 Premium" if "premium" in sub_type else "🌸 Fan"
+
+        from config import ADMIN_IDS
+        reply_keyboard = types.InlineKeyboardMarkup()
+        reply_keyboard.add(
+            types.InlineKeyboardButton(
+                "💬 Написать пользователю",
+                callback_data="admin_reply_" + str(user_id)
+            )
+        )
+
+        for admin_id in ADMIN_IDS:
+            try:
+                bot.send_message(
+                    admin_id,
+                    "💌 Новый запрос на знакомство!\n"
+                    "━━━━━━━━━━━━━━━\n\n"
+                    "👤 Пользователь: " + user_ref + "\n"
+                    "🆔 ID: " + str(user_id) + "\n"
+                    "💳 Подписка: " + sub_name + "\n\n"
+                    "💕 Интересует: " + model["name"] + "\n\n"
+                    "━━━━━━━━━━━━━━━",
+                    reply_markup=reply_keyboard
+                )
+            except Exception as e:
+                print("[CONTACT] Ошибка уведомления: " + str(e))
+
+        notify_channel(
+            bot,
+            "💌 Запрос на знакомство\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👤 " + user_ref + "\n"
+            "🆔 ID: " + str(user_id) + "\n"
+            "💳 Подписка: " + sub_name + "\n"
+            "💕 Интересует: " + model["name"]
         )
