@@ -38,26 +38,15 @@ def register_admin_handlers(bot):
 
     @bot.message_handler(commands=['channels'])
     def channels_command(message):
-        if not is_admin(message.from_user.id):
-            return
         from config import MEDIA_CHANNEL_ID, ADMIN_CHANNEL_ID
-        lines = ["📡 Настроенные каналы:\n"]
-        for label, ch_id in [("📢 Медиа", MEDIA_CHANNEL_ID), ("🔒 Админ", ADMIN_CHANNEL_ID)]:
-            if not ch_id:
-                lines.append(label + ": не задан")
-                continue
-            try:
-                chat = bot.get_chat(ch_id)
-                username = chat.username
-                link = "https://t.me/" + username if username else "нет публичной ссылки"
-                title = chat.title or str(ch_id)
-                lines.append(label + ":\n" + title + "\nID: " + str(ch_id) + "\n" + link)
-            except Exception as e:
-                lines.append(label + ":\nID: " + str(ch_id) + "\nОшибка: " + str(e)[:100])
-        try:
-            bot.send_message(message.chat.id, "\n\n".join(lines))
-        except Exception as e:
-            print("[CHANNELS] " + str(e))
+        bot.send_message(
+            message.chat.id,
+            "📡 Каналы в конфиге:\n\n"
+            "📢 Медиа ID: " + str(MEDIA_CHANNEL_ID) + "\n"
+            "🔒 Админ ID: " + str(ADMIN_CHANNEL_ID) + "\n\n"
+            "Твой ID: " + str(message.from_user.id) + "\n"
+            "Ты админ: " + str(is_admin(message.from_user.id))
+        )
 
     # ── Проверка кошелька ─────────────────────
 
