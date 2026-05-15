@@ -12,6 +12,7 @@ import time
 from telebot import types
 from config import ADMIN_IDS, LTC_ADDRESS
 from database.reviews import add_review, get_reviews, delete_review
+from database.settings import get_setting, set_setting
 from utils.notify import notify_channel
 from database.models import (
     add_model,
@@ -35,6 +36,48 @@ def is_admin(user_id: int) -> bool:
 
 
 def register_admin_handlers(bot):
+
+    # ── Фото приветствия ─────────────────────
+
+    @bot.message_handler(commands=['setwelcomephoto'])
+    def set_welcome_photo_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        admin_states[message.from_user.id] = "waiting_welcome_photo"
+        current = get_setting("welcome_photo")
+        status = "✅ Установлено" if current else "❌ Не установлено"
+        bot.send_message(
+            message.chat.id,
+            "🖼 Фото приветствия (/start)\n\n"
+            "Статус: " + status + "\n\n"
+            "Отправь новое фото — оно встанет на место.\n"
+            "/delwelcomephoto — убрать фото"
+        )
+
+    @bot.message_handler(commands=['delwelcomephoto'])
+    def del_welcome_photo_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        set_setting("welcome_photo", "")
+        bot.send_message(message.chat.id, "✅ Фото приветствия удалено.")
+
+    @bot.message_handler(
+        content_types=['photo'],
+        func=lambda msg: (
+            is_admin(msg.from_user.id)
+            and admin_states.get(msg.from_user.id) == "waiting_welcome_photo"
+        )
+    )
+    def process_welcome_photo(message):
+        file_id = message.photo[-1].file_id
+        set_setting("welcome_photo", file_id)
+        del admin_states[message.from_user.id]
+        bot.send_message(
+            message.chat.id,
+            "✅ Фото приветствия сохранено!\n\n"
+            "Теперь при /start пользователи видят это фото.\n"
+            "Проверь — напиши /start"
+        )
 
     # ── Проверка кошелька ─────────────────────
 
