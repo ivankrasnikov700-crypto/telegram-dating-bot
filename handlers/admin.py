@@ -44,17 +44,20 @@ def register_admin_handlers(bot):
         lines = ["📡 Настроенные каналы:\n"]
         for label, ch_id in [("📢 Медиа", MEDIA_CHANNEL_ID), ("🔒 Админ", ADMIN_CHANNEL_ID)]:
             if not ch_id:
-                lines.append(label + ": ❌ не задан")
+                lines.append(label + ": не задан")
                 continue
             try:
                 chat = bot.get_chat(ch_id)
                 username = chat.username
                 link = "https://t.me/" + username if username else "нет публичной ссылки"
                 title = chat.title or str(ch_id)
-                lines.append(label + ": " + title + "\nID: `" + str(ch_id) + "`\n🔗 " + link)
+                lines.append(label + ":\n" + title + "\nID: " + str(ch_id) + "\n" + link)
             except Exception as e:
-                lines.append(label + " ID " + str(ch_id) + ": ❌ " + str(e))
-        bot.send_message(message.chat.id, "\n\n".join(lines), parse_mode="Markdown")
+                lines.append(label + ":\nID: " + str(ch_id) + "\nОшибка: " + str(e)[:100])
+        try:
+            bot.send_message(message.chat.id, "\n\n".join(lines))
+        except Exception as e:
+            print("[CHANNELS] " + str(e))
 
     # ── Проверка кошелька ─────────────────────
 
