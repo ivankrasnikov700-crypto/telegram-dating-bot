@@ -34,6 +34,28 @@ def is_admin(user_id: int) -> bool:
 
 def register_admin_handlers(bot):
 
+    # ── Проверка каналов ──────────────────────
+
+    @bot.message_handler(commands=['channels'])
+    def channels_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        from config import MEDIA_CHANNEL_ID, ADMIN_CHANNEL_ID
+        lines = ["📡 Настроенные каналы:\n"]
+        for label, ch_id in [("📢 Медиа", MEDIA_CHANNEL_ID), ("🔒 Админ", ADMIN_CHANNEL_ID)]:
+            if not ch_id:
+                lines.append(label + ": ❌ не задан")
+                continue
+            try:
+                chat = bot.get_chat(ch_id)
+                username = chat.username
+                link = "https://t.me/" + username if username else "нет публичной ссылки"
+                title = chat.title or str(ch_id)
+                lines.append(label + ": " + title + "\nID: `" + str(ch_id) + "`\n🔗 " + link)
+            except Exception as e:
+                lines.append(label + " ID " + str(ch_id) + ": ❌ " + str(e))
+        bot.send_message(message.chat.id, "\n\n".join(lines), parse_mode="Markdown")
+
     # ── Проверка кошелька ─────────────────────
 
     @bot.message_handler(commands=['wallet'])
