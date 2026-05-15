@@ -81,37 +81,30 @@ def get_girls_list_keyboard(models: list, page: int, total_pages: int) -> types.
 def get_girl_profile_keyboard(model_id: int, has_premium: bool, has_fan: bool) -> types.InlineKeyboardMarkup:
     """
     Клавиатура профиля модели.
-    has_premium — полный доступ, has_fan — только превью.
+    Всегда две кнопки контента: Превью и Премиум.
     """
     markup = types.InlineKeyboardMarkup(row_width=1)
 
-    if has_premium:
-        markup.add(
-            types.InlineKeyboardButton(
-                "🔓 Смотреть весь контент",
-                callback_data="girl_full_" + str(model_id)
-            )
+    # Превью — доступно Fan и Premium
+    preview_label = "👁 Превью" if (has_fan or has_premium) else "👁 Превью 🔒"
+    markup.add(
+        types.InlineKeyboardButton(
+            preview_label,
+            callback_data="girl_preview_" + str(model_id)
         )
-    elif has_fan:
-        markup.add(
-            types.InlineKeyboardButton(
-                "👁 Смотреть превью (Fan)",
-                callback_data="girl_preview_" + str(model_id)
-            )
+    )
+
+    # Весь контент — только Premium
+    premium_label = "👑 Весь контент" if has_premium else "👑 Премиум контент 🔒"
+    markup.add(
+        types.InlineKeyboardButton(
+            premium_label,
+            callback_data="girl_full_" + str(model_id)
         )
-        markup.add(
-            types.InlineKeyboardButton(
-                "👑 Получить Premium доступ",
-                callback_data="subscription"
-            )
-        )
-    else:
-        markup.add(
-            types.InlineKeyboardButton(
-                "👁 Превью (нужна Fan/Premium)",
-                callback_data="girl_preview_" + str(model_id)
-            )
-        )
+    )
+
+    # Кнопка подписки — только если нет никакой
+    if not has_fan and not has_premium:
         markup.add(
             types.InlineKeyboardButton(
                 "💎 Оформить подписку",
@@ -119,7 +112,6 @@ def get_girl_profile_keyboard(model_id: int, has_premium: bool, has_fan: bool) -
             )
         )
 
-    # Кнопка Назад — всегда возвращает на первую страницу каталога
     markup.add(
         types.InlineKeyboardButton("« Назад к каталогу", callback_data="girls")
     )
@@ -195,7 +187,7 @@ def show_catalog(bot, chat_id: int, message_id: int,
     if sub["active"]:
         sub_type_val = sub.get("type") or ""
         if "premium" in sub_type_val or sub_type_val == "test_2min":
-            access_text = "👑 У тебя Premium — полный доступ!"
+            access_text = "👑 Premium — полный доступ!"
         else:
             access_text = "🌸 У тебя Fan — превью профилей"
     else:
@@ -500,10 +492,17 @@ def register_girls_handlers(bot):
         sub = check_subscription(user_id)
 
         sub_type = sub.get("type") or ""
-        if not sub["active"] or ("premium" not in sub_type and sub_type != "test_2min"):
+        if not sub["active"]:
             bot.answer_callback_query(
                 call.id,
-                "👑 Только для Premium подписчиков!\n\nОформи Premium в меню 💎",
+                "🔒 Нужна подписка!\n\nОформи Fan или Premium в меню 💎",
+                show_alert=True
+            )
+            return
+        if "premium" not in sub_type and sub_type != "test_2min":
+            bot.answer_callback_query(
+                call.id,
+                "👑 Только для Premium!\n\nУ тебя Fan — весь контент доступен по Premium 👑",
                 show_alert=True
             )
             return
