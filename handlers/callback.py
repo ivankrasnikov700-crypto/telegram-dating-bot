@@ -514,12 +514,13 @@ def register_callback_handlers(bot):
         user_id = call.from_user.id
 
         try:
+            import psycopg2.extras
             conn   = get_connection()
-            cursor = conn.cursor()
+            cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
             cursor.execute('''
                 SELECT amount, reason, created_at
                 FROM crystal_transactions
-                WHERE user_id = ?
+                WHERE user_id = %s
                 ORDER BY created_at DESC
                 LIMIT 15
             ''', (user_id,))
@@ -547,9 +548,9 @@ def register_callback_handlers(bot):
         lines = ["📊 История кристаллов (последние 15):\n"]
 
         for row in rows:
-            amount         = row[0]
-            reason         = row[1] or "Операция"
-            created_at_raw = row[2]
+            amount         = row["amount"]
+            reason         = row["reason"] or "Операция"
+            created_at_raw = row["created_at"]
 
             try:
                 import datetime

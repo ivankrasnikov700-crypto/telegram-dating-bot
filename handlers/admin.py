@@ -616,34 +616,35 @@ def register_admin_handlers(bot):
             return
 
         from database import get_connection
+        import time as _time
         conn = get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT COUNT(*) FROM users")
+        cursor.execute("SELECT COUNT(*) as n FROM users")
         total_users = cursor.fetchone()[0]
 
+        now_ts = int(_time.time())
         cursor.execute(
-            "SELECT COUNT(*) FROM users WHERE subscription_type IS NOT NULL "
-            "AND subscription_expires > strftime('%s', 'now')"
+            "SELECT COUNT(*) as n FROM users WHERE subscription_type IS NOT NULL "
+            "AND subscription_expires > %s", (now_ts,)
         )
         active_subs = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM users WHERE subscription_type = 'fan_30'")
+        cursor.execute("SELECT COUNT(*) as n FROM users WHERE subscription_type = 'fan_30'")
         fan_count = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM users WHERE subscription_type = 'premium_90'")
+        cursor.execute("SELECT COUNT(*) as n FROM users WHERE subscription_type = 'premium_90'")
         premium_count = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'confirmed'")
+        cursor.execute("SELECT COUNT(*) as n FROM payments WHERE status = 'confirmed'")
         payments_confirmed = cursor.fetchone()[0]
 
         cursor.execute(
-            "SELECT SUM(amount_usd) FROM payments WHERE status = 'confirmed'"
+            "SELECT COALESCE(SUM(amount_usd), 0) as s FROM payments WHERE status = 'confirmed'"
         )
-        total_usd_row = cursor.fetchone()[0]
-        total_usd = round(total_usd_row, 2) if total_usd_row else 0
+        total_usd = round(cursor.fetchone()[0], 2)
 
-        cursor.execute("SELECT COUNT(*) FROM models WHERE is_active = 1")
+        cursor.execute("SELECT COUNT(*) as n FROM models WHERE is_active = 1")
         models_count = cursor.fetchone()[0]
 
         conn.close()

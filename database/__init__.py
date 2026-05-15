@@ -1,128 +1,112 @@
-# database/__init__.py
-# База данных SQLite — пользователи, подписки, кристаллы
-# Изменено:
-# activate_subscription() принимает minutes= для тестовых подписок
-# activate_subscription() сбрасывает флаг уведомления об истечении
-
-import sqlite3
-import os
+import psycopg2
+import psycopg2.extras
 import time
-from config import DB_PATH
+from config import DATABASE_URL
 
 
-def get_connection() -> sqlite3.Connection:
-    """Создаёт подключение к базе данных"""
-    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
-    conn = sqlite3.connect(DB_PATH)
-    conn.row_factory = sqlite3.Row
+def get_connection():
+    conn = psycopg2.connect(DATABASE_URL)
     return conn
 
 
+def _cur(conn):
+    return conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
+
+
 def init_db():
-    """Инициализация базы данных — создаём таблицы"""
     conn = get_connection()
     cursor = conn.cursor()
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            user_id INTEGER PRIMARY KEY,
+            user_id BIGINT PRIMARY KEY,
             username TEXT,
             full_name TEXT,
             crystals INTEGER DEFAULT 0,
             subscription_type TEXT DEFAULT NULL,
-            subscription_expires INTEGER DEFAULT NULL,
+            subscription_expires BIGINT DEFAULT NULL,
             subscription_notified INTEGER DEFAULT 0,
             profiles_viewed INTEGER DEFAULT 0,
             favorites_count INTEGER DEFAULT 0,
             gifts_sent INTEGER DEFAULT 0,
-            created_at INTEGER DEFAULT (strftime('%s', 'now'))
+            created_at BIGINT
         )
     ''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS payments (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
             payment_id TEXT NOT NULL,
             sub_type TEXT NOT NULL,
             amount_ltc REAL NOT NULL,
             amount_usd REAL NOT NULL,
             crystals_added INTEGER DEFAULT 0,
             status TEXT DEFAULT 'pending',
-            created_at INTEGER DEFAULT (strftime('%s', 'now')),
+            created_at BIGINT,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         )
     ''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS crystal_transactions (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            user_id INTEGER NOT NULL,
+            id SERIAL PRIMARY KEY,
+            user_id BIGINT NOT NULL,
             amount INTEGER NOT NULL,
             reason TEXT NOT NULL,
-            created_at INTEGER DEFAULT (strftime('%s', 'now')),
+            created_at BIGINT,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         )
     ''')
 
     conn.commit()
     conn.close()
-    print("[DB] База данных инициализирована")
+    print("[DB] База данных инициализирована (PostgreSQL)")
 
 
 def register_user(user_id: int, username: str, full_name: str):
-    """Регистрирует нового пользователя если его нет"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        INSERT OR IGNORE INTO users (user_id, username, full_name)
-        VALUES (?, ?, ?)
-    ''', (user_id, username, full_name))
+        INSERT INTO users (user_id, username, full_name, created_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (user_id) DO NOTHING
+    ''', (user_id, username, full_name, int(time.time())))
     conn.commit()
     conn.close()
 
 
 def get_user(user_id: int) -> dict | None:
-    """Возвращает данные пользователя"""
     conn = get_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT * FROM users WHERE user_id = ?', (user_id,))
+    cursor = _cur(conn)
+    cursor.execute('SELECT * FROM users WHERE user_id = %s', (user_id,))
     row = cursor.fetchone()
     conn.close()
     return dict(row) if row else None
 
 
 def activate_subscription(user_id: int, sub_type: str, days: int, crystals: int, minutes: int = 0):
-    """
-    Активирует подписку и начисляет кристаллы.
-
-    Args:
-        minutes > 0 — тестовая подписка на N минут (приоритет над days)
-        days        — боевая подписка на N дней
-    """
     if minutes > 0:
-        # Тестовая подписка — считаем в секундах от минут
         expires_at = int(time.time()) + (minutes * 60)
         print("[DB] Тестовая подписка: " + str(minutes) + " мин для user " + str(user_id))
     else:
-        # Боевая подписка — в днях
         expires_at = int(time.time()) + (days * 86400)
 
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE users
-        SET subscription_type = ?,
-            subscription_expires = ?,
+        SET subscription_type = %s,
+            subscription_expires = %s,
             subscription_notified = 0,
-            crystals = crystals + ?
-        WHERE user_id = ?
+            crystals = crystals + %s
+        WHERE user_id = %s
     ''', (sub_type, expires_at, crystals, user_id))
 
     cursor.execute('''
-        INSERT INTO crystal_transactions (user_id, amount, reason)
-        VALUES (?, ?, ?)
-    ''', (user_id, crystals, "Подписка " + sub_type))
+        INSERT INTO crystal_transactions (user_id, amount, reason, created_at)
+        VALUES (%s, %s, %s, %s)
+    ''', (user_id, crystals, "Подписка " + sub_type, int(time.time())))
 
     conn.commit()
     conn.close()
@@ -131,23 +115,21 @@ def activate_subscription(user_id: int, sub_type: str, days: int, crystals: int,
 
 
 def add_crystals(user_id: int, amount: int, reason: str):
-    """Начисляет кристаллы пользователю"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        UPDATE users SET crystals = crystals + ?
-        WHERE user_id = ?
+        UPDATE users SET crystals = crystals + %s
+        WHERE user_id = %s
     ''', (amount, user_id))
     cursor.execute('''
-        INSERT INTO crystal_transactions (user_id, amount, reason)
-        VALUES (?, ?, ?)
-    ''', (user_id, amount, reason))
+        INSERT INTO crystal_transactions (user_id, amount, reason, created_at)
+        VALUES (%s, %s, %s, %s)
+    ''', (user_id, amount, reason, int(time.time())))
     conn.commit()
     conn.close()
 
 
 def spend_crystals(user_id: int, amount: int, reason: str) -> bool:
-    """Списывает кристаллы — возвращает False если недостаточно"""
     user = get_user(user_id)
     if not user or user["crystals"] < amount:
         return False
@@ -155,20 +137,19 @@ def spend_crystals(user_id: int, amount: int, reason: str) -> bool:
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
-        UPDATE users SET crystals = crystals - ?
-        WHERE user_id = ?
+        UPDATE users SET crystals = crystals - %s
+        WHERE user_id = %s
     ''', (amount, user_id))
     cursor.execute('''
-        INSERT INTO crystal_transactions (user_id, amount, reason)
-        VALUES (?, ?, ?)
-    ''', (user_id, -amount, reason))
+        INSERT INTO crystal_transactions (user_id, amount, reason, created_at)
+        VALUES (%s, %s, %s, %s)
+    ''', (user_id, -amount, reason, int(time.time())))
     conn.commit()
     conn.close()
     return True
 
 
 def check_subscription(user_id: int) -> dict:
-    """Проверяет активность подписки"""
     user = get_user(user_id)
 
     if not user:
@@ -182,31 +163,30 @@ def check_subscription(user_id: int) -> dict:
 
     now = int(time.time())
 
-    if now > expires:
+    if now > int(expires):
         cancel_subscription(user_id)
         return {"active": False, "type": None, "days_left": 0}
 
-    days_left = max(0, (expires - now) // 86400)
-    seconds_left = expires - now
+    days_left = max(0, (int(expires) - now) // 86400)
+    seconds_left = int(expires) - now
 
     return {
         "active":       True,
         "type":         sub_type,
         "days_left":    days_left,
-        "seconds_left": seconds_left,   # для тестовой подписки
-        "expires_at":   expires
+        "seconds_left": seconds_left,
+        "expires_at":   int(expires)
     }
 
 
 def cancel_subscription(user_id: int):
-    """Отменяет истёкшую подписку"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE users
         SET subscription_type = NULL,
             subscription_expires = NULL
-        WHERE user_id = ?
+        WHERE user_id = %s
     ''', (user_id,))
     conn.commit()
     conn.close()
@@ -215,34 +195,31 @@ def cancel_subscription(user_id: int):
 
 def save_payment(user_id: int, payment_id: str, sub_type: str,
                  amount_ltc: float, amount_usd: float, crystals: int):
-    """Сохраняет информацию о платеже"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO payments
-        (user_id, payment_id, sub_type, amount_ltc, amount_usd, crystals_added)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ''', (user_id, payment_id, sub_type, amount_ltc, amount_usd, crystals))
+        (user_id, payment_id, sub_type, amount_ltc, amount_usd, crystals_added, created_at)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
+    ''', (user_id, payment_id, sub_type, amount_ltc, amount_usd, crystals, int(time.time())))
     conn.commit()
     conn.close()
 
 
 def confirm_payment(payment_id: str):
-    """Помечает платёж как подтверждённый"""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         UPDATE payments SET status = 'confirmed'
-        WHERE payment_id = ?
+        WHERE payment_id = %s
     ''', (payment_id,))
     conn.commit()
     conn.close()
 
 
 def get_days_since_registration(user_id: int) -> int:
-    """Возвращает количество дней с регистрации"""
     user = get_user(user_id)
     if not user:
         return 0
-    created_at = user.get("created_at", int(time.time()))
-    return (int(time.time()) - created_at) // 86400
+    created_at = user.get("created_at") or int(time.time())
+    return (int(time.time()) - int(created_at)) // 86400

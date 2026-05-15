@@ -39,20 +39,19 @@ def _check_expiring_subscriptions(bot):
     Шлёт уведомления пользователям (один раз на подписку).
     """
     from database import get_connection
+    import psycopg2.extras
 
     conn = get_connection()
-    cursor = conn.cursor()
+    cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
 
     now = int(time.time())
-    in_24h = now + 24 * 3600  # через 24 часа
+    in_24h = now + 24 * 3600
 
-    # Ищем подписки которые истекают в ближайшие 24 часа
-    # и по которым уведомление ещё не отправлялось
     cursor.execute('''
         SELECT user_id, subscription_type, subscription_expires
         FROM users
         WHERE subscription_expires IS NOT NULL
-          AND subscription_expires BETWEEN ? AND ?
+          AND subscription_expires BETWEEN %s AND %s
           AND subscription_notified = 0
     ''', (now, in_24h))
 
@@ -66,9 +65,9 @@ def _check_expiring_subscriptions(bot):
     print("[SCHEDULER] Истекающих подписок: " + str(len(expiring)))
 
     for row in expiring:
-        user_id = row[0]
-        sub_type = row[1]
-        expires_at = row[2]
+        user_id = row["user_id"]
+        sub_type = row["subscription_type"]
+        expires_at = row["subscription_expires"]
 
         try:
             hours_left = max(1, (expires_at - now) // 3600)
@@ -106,7 +105,7 @@ def _mark_notified(user_id: int):
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "UPDATE users SET subscription_notified = 1 WHERE user_id = ?",
+            "UPDATE users SET subscription_notified = 1 WHERE user_id = %s",
             (user_id,)
         )
         conn.commit()
@@ -127,12 +126,12 @@ def add_scheduler_columns():
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "ALTER TABLE users ADD COLUMN subscription_notified INTEGER DEFAULT 0"
+            "ALTER TABLE users ADD COLUMN IF NOT EXISTS subscription_notified INTEGER DEFAULT 0"
         )
         conn.commit()
-        print("[SCHEDULER] Миграция: добавлена колонка subscription_notified")
-    except Exception:
-        pass  # Колонка уже есть
+        print("[SCHEDULER] Миграция: subscription_notified OK")
+    except Exception as e:
+        print("[SCHEDULER] Миграция: " + str(e))
     finally:
         conn.close()
 
@@ -147,7 +146,7 @@ def reset_notification_flag(user_id: int):
     cursor = conn.cursor()
     try:
         cursor.execute(
-            "UPDATE users SET subscription_notified = 0 WHERE user_id = ?",
+            "UPDATE users SET subscription_notified = 0 WHERE user_id = %s",
             (user_id,)
         )
         conn.commit()

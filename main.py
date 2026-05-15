@@ -4,7 +4,7 @@
 import logging
 import telebot
 import time
-from config import BOT_TOKEN, LTC_ADDRESS, ADMIN_IDS
+from config import BOT_TOKEN, LTC_ADDRESS, ADMIN_IDS, DATABASE_URL
 from database import init_db
 from database.models import init_models_db
 
@@ -20,6 +20,8 @@ def _check_env():
     errors = []
     if not BOT_TOKEN:
         errors.append("BOT_TOKEN — токен бота от @BotFather")
+    if not DATABASE_URL:
+        errors.append("DATABASE_URL — строка подключения PostgreSQL (добавь PostgreSQL сервис в Railway)")
     if not LTC_ADDRESS:
         errors.append("LTC_ADDRESS — адрес LTC кошелька")
     if not ADMIN_IDS:
