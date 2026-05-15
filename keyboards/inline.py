@@ -11,6 +11,7 @@ def get_main_menu() -> types.InlineKeyboardMarkup:
     markup.add(
         types.InlineKeyboardButton("💎 Подписка", callback_data="subscription"),
         types.InlineKeyboardButton("👭 Девушки", callback_data="girls"),
+        types.InlineKeyboardButton("⭐ Отзывы", callback_data="reviews"),
         types.InlineKeyboardButton("👤 Мой профиль", callback_data="my_profile"),
         types.InlineKeyboardButton("💎 Купить кристаллы", callback_data="buy_crystals"),
         types.InlineKeyboardButton("ℹ️ О системе", callback_data="about_system")

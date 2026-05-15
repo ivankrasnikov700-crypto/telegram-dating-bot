@@ -11,6 +11,7 @@ import time
 
 from telebot import types
 from config import ADMIN_IDS, LTC_ADDRESS
+from database.reviews import add_review, get_reviews, delete_review
 from database.models import (
     add_model,
     update_model,
@@ -33,6 +34,55 @@ def is_admin(user_id: int) -> bool:
 
 
 def register_admin_handlers(bot):
+
+    # ── Отзывы ───────────────────────────────
+
+    @bot.message_handler(commands=['addreview'])
+    def add_review_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        admin_states[message.from_user.id] = "waiting_review_photo"
+        bot.send_message(
+            message.chat.id,
+            "⭐ Отправь фото отзыва.\n\n"
+            "Можешь добавить подпись к фото — она будет показана под ним."
+        )
+
+    @bot.message_handler(commands=['delreview'])
+    def del_review_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            reviews = get_reviews()
+            if not reviews:
+                bot.send_message(message.chat.id, "Отзывов пока нет")
+                return
+            lines = ["📋 Отзывы:"]
+            for r in reviews:
+                lines.append("ID " + str(r["id"]) + " — " + (r.get("caption") or "без подписи"))
+            bot.send_message(message.chat.id, "\n".join(lines) + "\n\nУдалить: /delreview ID")
+            return
+        delete_review(int(parts[1]))
+        bot.send_message(message.chat.id, "✅ Отзыв удалён")
+
+    @bot.message_handler(
+        content_types=['photo'],
+        func=lambda msg: (
+            is_admin(msg.from_user.id)
+            and admin_states.get(msg.from_user.id) == "waiting_review_photo"
+        )
+    )
+    def process_review_photo(message):
+        file_id = message.photo[-1].file_id
+        caption = message.caption or None
+        review_id = add_review(file_id, caption)
+        del admin_states[message.from_user.id]
+        bot.send_message(
+            message.chat.id,
+            "✅ Отзыв добавлен! ID: " + str(review_id) + "\n\n"
+            "Для удаления: /delreview " + str(review_id)
+        )
 
     # ── Проверка каналов ──────────────────────
 

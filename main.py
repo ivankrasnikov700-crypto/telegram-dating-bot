@@ -7,6 +7,7 @@ import time
 from config import BOT_TOKEN, LTC_ADDRESS, ADMIN_IDS, DATABASE_URL
 from database import init_db
 from database.models import init_models_db
+from database.reviews import init_reviews_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,18 +45,21 @@ from handlers.start import register_start_handlers
 from handlers.callback import register_callback_handlers
 from handlers.admin import register_admin_handlers
 from handlers.girls import register_girls_handlers
+from handlers.reviews import register_reviews_handlers
 from utils.scheduler import start_scheduler, add_scheduler_columns
 
 
 def main():
     init_db()
     init_models_db()
+    init_reviews_db()
     add_scheduler_columns()
 
     register_start_handlers(bot)
     register_callback_handlers(bot)
     register_admin_handlers(bot)
     register_girls_handlers(bot)
+    register_reviews_handlers(bot)
 
     start_scheduler(bot)
 
