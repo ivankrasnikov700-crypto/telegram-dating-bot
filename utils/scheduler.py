@@ -1,45 +1,58 @@
 # utils/scheduler.py
-# Фоновый планировщик — уведомления об истечении подписки
-# Запускается в daemon-треде при старте бота
-# Проверяет каждые 6 часов подписки которые истекают через 24 часа
+# Фоновый планировщик:
+#   1. Каждые 6 часов — уведомления об истекающих подписках
+#   2. Каждый день в 10:00 Кишинёв (UTC+3) — статистика в admin-канал
 
 import threading
 import time
+import datetime
 import logging
 
 logger = logging.getLogger(__name__)
 
+# Час отправки статистики по местному времени (UTC+3, Кишинёв)
+_STATS_HOUR_LOCAL = 10
+_UTC_OFFSET_HOURS = 3
+
 
 def start_scheduler(bot):
-    """Запускает планировщик в фоновом daemon-треде"""
-    thread = threading.Thread(
-        target=_scheduler_loop,
+    """Запускает два фоновых треда: подписки и ежедневная статистика."""
+    threading.Thread(
+        target=_subscription_loop,
         args=(bot,),
-        daemon=True,  # Умрёт вместе с основным процессом
-        name="SubscriptionScheduler"
-    )
-    thread.start()
-    print("[SCHEDULER] Планировщик подписок запущен")
+        daemon=True,
+        name="SubscriptionChecker"
+    ).start()
+
+    threading.Thread(
+        target=_daily_stats_loop,
+        args=(bot,),
+        daemon=True,
+        name="DailyStats"
+    ).start()
+
+    print("[SCHEDULER] Запущен. Статистика каждый день в "
+          + str(_STATS_HOUR_LOCAL) + ":00 по Кишинёву (UTC+"
+          + str(_UTC_OFFSET_HOURS) + ")")
 
 
-def _scheduler_loop(bot):
-    """Основной цикл — проверка каждые 6 часов"""
+# ─────────────────────────────────────────────
+# Проверка истекающих подписок (каждые 6 часов)
+# ─────────────────────────────────────────────
+
+def _subscription_loop(bot):
     while True:
         try:
             _check_expiring_subscriptions(bot)
         except Exception as e:
             print("[SCHEDULER ERROR] " + str(e))
-        # Ждём 6 часов перед следующей проверкой
         time.sleep(6 * 60 * 60)
 
 
 def _check_expiring_subscriptions(bot):
-    """
-    Находит подписки которые истекают в ближайшие 24 часа.
-    Шлёт уведомления пользователям (один раз на подписку).
-    """
-    from database import get_connection
+    """Находит подписки которые истекают в ближайшие 24 часа и уведомляет."""
     import psycopg2.extras
+    from database import get_connection
 
     conn = get_connection()
     cursor = conn.cursor(cursor_factory=psycopg2.extras.RealDictCursor)
@@ -65,13 +78,13 @@ def _check_expiring_subscriptions(bot):
     print("[SCHEDULER] Истекающих подписок: " + str(len(expiring)))
 
     for row in expiring:
-        user_id = row["user_id"]
+        user_id  = row["user_id"]
         sub_type = row["subscription_type"]
-        expires_at = row["subscription_expires"]
+        expires  = row["subscription_expires"]
 
         try:
-            hours_left = max(1, (expires_at - now) // 3600)
-            sub_name = "Fan" if "fan" in str(sub_type) else "Premium"
+            hours_left = max(1, (expires - now) // 3600)
+            sub_name   = "Fan" if "fan" in str(sub_type) else "Premium"
 
             from telebot import types
             keyboard = types.InlineKeyboardMarkup()
@@ -84,13 +97,13 @@ def _check_expiring_subscriptions(bot):
 
             bot.send_message(
                 user_id,
-                "⏰ Подписка " + sub_name + " истекает через " + str(hours_left) + " ч!\n\n"
+                "⏰ Подписка " + sub_name + " истекает через "
+                + str(hours_left) + " ч!\n\n"
                 "Не теряй доступ к Miss Moldova 💋\n"
                 "Продли прямо сейчас — и получи новые кристаллы.",
                 reply_markup=keyboard
             )
 
-            # Помечаем как уведомлённого
             _mark_notified(user_id)
             print("[SCHEDULER] Уведомление → " + str(user_id))
 
@@ -99,7 +112,6 @@ def _check_expiring_subscriptions(bot):
 
 
 def _mark_notified(user_id: int):
-    """Ставит флаг что уведомление уже отправлено"""
     from database import get_connection
     conn = get_connection()
     cursor = conn.cursor()
@@ -115,12 +127,149 @@ def _mark_notified(user_id: int):
         conn.close()
 
 
+# ─────────────────────────────────────────────
+# Ежедневная статистика в 10:00 Кишинёв
+# ─────────────────────────────────────────────
+
+def _daily_stats_loop(bot):
+    """Ждёт следующего 10:00 по Кишинёву, отправляет статистику, повторяет."""
+    while True:
+        _sleep_until_stats_time()
+        try:
+            _send_daily_stats(bot)
+        except Exception as e:
+            print("[STATS ERROR] " + str(e))
+        # Небольшая пауза чтобы не сработало дважды в одну минуту
+        time.sleep(90)
+
+
+def _sleep_until_stats_time():
+    """Спит ровно до следующего 10:00 по Кишинёву (UTC+3)."""
+    now_utc  = datetime.datetime.utcnow()
+    now_local = now_utc + datetime.timedelta(hours=_UTC_OFFSET_HOURS)
+
+    target = now_local.replace(
+        hour=_STATS_HOUR_LOCAL, minute=0, second=0, microsecond=0
+    )
+    if now_local >= target:
+        target += datetime.timedelta(days=1)
+
+    secs = (target - now_local).total_seconds()
+    print("[STATS] Следующая отправка через "
+          + str(int(secs // 3600)) + " ч "
+          + str(int((secs % 3600) // 60)) + " мин")
+    time.sleep(secs)
+
+
+def _send_daily_stats(bot):
+    """Собирает статистику из БД и отправляет в admin-канал."""
+    from config import ADMIN_CHANNEL_ID
+    if not ADMIN_CHANNEL_ID:
+        return
+
+    from database import get_connection
+    conn = get_connection()
+    cursor = conn.cursor()
+
+    now_ts = int(time.time())
+
+    # Всего пользователей
+    cursor.execute("SELECT COUNT(*) FROM users")
+    total_users = cursor.fetchone()[0]
+
+    # Активные подписки
+    cursor.execute(
+        "SELECT COUNT(*) FROM users "
+        "WHERE subscription_type IS NOT NULL AND subscription_expires > %s",
+        (now_ts,)
+    )
+    active_subs = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM users "
+        "WHERE subscription_type LIKE 'fan%%' AND subscription_expires > %s",
+        (now_ts,)
+    )
+    fan_count = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COUNT(*) FROM users "
+        "WHERE subscription_type LIKE 'premium%%' AND subscription_expires > %s",
+        (now_ts,)
+    )
+    premium_count = cursor.fetchone()[0]
+
+    # Платежи
+    cursor.execute(
+        "SELECT COUNT(*) FROM payments WHERE status = 'confirmed'"
+    )
+    total_payments = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COALESCE(SUM(amount_usd), 0) FROM payments WHERE status = 'confirmed'"
+    )
+    total_usd = round(cursor.fetchone()[0], 2)
+
+    # За последние 24 часа
+    since_24h = now_ts - 86400
+    cursor.execute(
+        "SELECT COUNT(*) FROM users WHERE created_at > %s",
+        (since_24h,)
+    )
+    new_users_24h = cursor.fetchone()[0]
+
+    cursor.execute(
+        "SELECT COALESCE(SUM(amount_usd), 0) FROM payments "
+        "WHERE status = 'confirmed' AND created_at > %s",
+        (since_24h,)
+    )
+    usd_24h = round(cursor.fetchone()[0], 2)
+
+    # Активных моделей
+    cursor.execute("SELECT COUNT(*) FROM models WHERE is_active = 1")
+    models_count = cursor.fetchone()[0]
+
+    conn.close()
+
+    now_local = datetime.datetime.utcnow() + datetime.timedelta(hours=_UTC_OFFSET_HOURS)
+    date_str  = now_local.strftime("%d.%m.%Y")
+
+    text = (
+        "📊 Ежедневная статистика Miss Moldova\n"
+        "━━━━━━━━━━━━━━━\n"
+        "📅 " + date_str + " | 10:00 Кишинёв\n\n"
+
+        "👥 Пользователи:\n"
+        "  Всего: " + str(total_users) + "\n"
+        "  Новых за 24 ч: +" + str(new_users_24h) + "\n\n"
+
+        "💎 Подписки:\n"
+        "  Активных: " + str(active_subs) + "\n"
+        "  🌸 Fan: " + str(fan_count) + "\n"
+        "  👑 Premium: " + str(premium_count) + "\n\n"
+
+        "💰 Финансы:\n"
+        "  Всего платежей: " + str(total_payments) + "\n"
+        "  Выручка всего: $" + str(total_usd) + "\n"
+        "  За 24 ч: $" + str(usd_24h) + "\n\n"
+
+        "👩 Активных моделей: " + str(models_count) + "\n"
+        "━━━━━━━━━━━━━━━"
+    )
+
+    try:
+        bot.send_message(ADMIN_CHANNEL_ID, text)
+        print("[STATS] Статистика отправлена в канал")
+    except Exception as e:
+        print("[STATS] Ошибка отправки: " + str(e))
+
+
+# ─────────────────────────────────────────────
+# Миграция БД
+# ─────────────────────────────────────────────
+
 def add_scheduler_columns():
-    """
-    Добавляет колонку subscription_notified в таблицу users.
-    Вызывается при старте — безопасная миграция.
-    Сбрасывает флаг уведомления при продлении подписки.
-    """
+    """Добавляет колонку subscription_notified если её нет."""
     from database import get_connection
     conn = get_connection()
     cursor = conn.cursor()
@@ -137,10 +286,7 @@ def add_scheduler_columns():
 
 
 def reset_notification_flag(user_id: int):
-    """
-    Сбрасывает флаг уведомления при активации новой подписки.
-    Вызывать из database.activate_subscription() после обновления.
-    """
+    """Сбрасывает флаг уведомления при активации новой подписки."""
     from database import get_connection
     conn = get_connection()
     cursor = conn.cursor()

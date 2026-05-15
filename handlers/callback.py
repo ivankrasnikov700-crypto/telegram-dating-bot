@@ -33,6 +33,7 @@ from database import (
     get_connection
 )
 from config import LTC_ADDRESS, ADMIN_IDS
+from utils.notify import notify_channel
 from telebot import types
 
 # Словарь активных платежей: user_id → invoice
@@ -190,6 +191,27 @@ def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict):
                         )
                     except Exception as e:
                         print("[ADMIN NOTIFY ERROR] " + str(e))
+
+                if invoice_type == "subscription":
+                    notify_channel(
+                        bot,
+                        "✅ Платёж подтверждён!\n"
+                        "━━━━━━━━━━━━━━━\n"
+                        "👤 User: " + str(user_id) + "\n"
+                        "💳 Тариф: " + invoice["sub_name"] + "\n"
+                        "💰 Сумма: " + str(amount) + " LTC\n"
+                        "🆔 ID: " + payment_id
+                    )
+                else:
+                    notify_channel(
+                        bot,
+                        "✅ Платёж кристаллов подтверждён!\n"
+                        "━━━━━━━━━━━━━━━\n"
+                        "👤 User: " + str(user_id) + "\n"
+                        "💎 Кристаллов: " + str(invoice["total_crystals"]) + "\n"
+                        "💰 Сумма: " + str(amount) + " LTC\n"
+                        "🆔 ID: " + payment_id
+                    )
 
                 active_payments.pop(user_id, None)
                 print("[MONITOR] Платёж " + payment_id + " подтверждён!")
@@ -386,10 +408,10 @@ def register_callback_handlers(bot):
             parse_mode="Markdown"
         )
 
+        minutes = invoice.get("minutes", 0)
+        duration = str(minutes) + " мин (тест)" if minutes > 0 else str(invoice["days"]) + " дней"
         for admin_id in ADMIN_IDS:
             try:
-                minutes = invoice.get("minutes", 0)
-                duration = str(minutes) + " мин (тест)" if minutes > 0 else str(invoice["days"]) + " дней"
                 bot.send_message(
                     admin_id,
                     "🔔 Новый счёт на подписку\n\n"
@@ -401,6 +423,17 @@ def register_callback_handlers(bot):
                 )
             except Exception as e:
                 print("[ADMIN NOTIFY ERROR] " + str(e))
+
+        notify_channel(
+            bot,
+            "🔔 Новый счёт на подписку\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👤 User: " + str(user_id) + "\n"
+            "💳 Тариф: " + invoice["sub_name"] + "\n"
+            "⏰ Срок: " + duration + "\n"
+            "💰 Сумма: " + str(invoice["amount_ltc"]) + " LTC\n"
+            "🆔 ID: " + invoice["payment_id"]
+        )
 
         thread = threading.Thread(
             target=monitor_payment,
@@ -468,6 +501,16 @@ def register_callback_handlers(bot):
                 )
             except Exception as e:
                 print("[ADMIN NOTIFY ERROR] " + str(e))
+
+        notify_channel(
+            bot,
+            "🔔 Покупка кристаллов\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👤 User: " + str(user_id) + "\n"
+            "💎 Кристаллов: " + str(invoice["total_crystals"]) + "\n"
+            "💰 Сумма: " + str(invoice["amount_ltc"]) + " LTC\n"
+            "🆔 ID: " + invoice["payment_id"]
+        )
 
         thread = threading.Thread(
             target=monitor_payment,

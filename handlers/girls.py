@@ -16,6 +16,7 @@ from database.models import (
     get_preview_media,
     get_all_media
 )
+from utils.notify import notify_channel
 
 # Количество моделей на одной странице каталога
 MODELS_PER_PAGE = 5
@@ -81,39 +82,37 @@ def get_girls_list_keyboard(models: list, page: int, total_pages: int) -> types.
 def get_girl_profile_keyboard(model_id: int, has_premium: bool, has_fan: bool) -> types.InlineKeyboardMarkup:
     """
     Клавиатура профиля модели.
-    Всегда две кнопки контента: Превью и Премиум.
+    has_premium — полный доступ, has_fan — только превью.
     """
     markup = types.InlineKeyboardMarkup(row_width=1)
 
-    # Превью — доступно Fan и Premium
-    preview_label = "👁 Превью" if (has_fan or has_premium) else "👁 Превью 🔒"
-    markup.add(
-        types.InlineKeyboardButton(
-            preview_label,
-            callback_data="girl_preview_" + str(model_id)
-        )
-    )
-
-    # Весь контент — только Premium
-    premium_label = "👑 Весь контент" if has_premium else "👑 Премиум контент 🔒"
-    markup.add(
-        types.InlineKeyboardButton(
-            premium_label,
-            callback_data="girl_full_" + str(model_id)
-        )
-    )
-
-    # Написать девушке — для подписчиков
-    if has_fan or has_premium:
+    if has_premium:
         markup.add(
             types.InlineKeyboardButton(
-                "💌 Написать девушке",
-                callback_data="contact_girl_" + str(model_id)
+                "🔓 Смотреть весь контент",
+                callback_data="girl_full_" + str(model_id)
             )
         )
-
-    # Кнопка подписки — только если нет никакой
-    if not has_fan and not has_premium:
+    elif has_fan:
+        markup.add(
+            types.InlineKeyboardButton(
+                "👁 Смотреть превью (Fan)",
+                callback_data="girl_preview_" + str(model_id)
+            )
+        )
+        markup.add(
+            types.InlineKeyboardButton(
+                "👑 Получить Premium доступ",
+                callback_data="subscription"
+            )
+        )
+    else:
+        markup.add(
+            types.InlineKeyboardButton(
+                "👁 Превью (нужна Fan/Premium)",
+                callback_data="girl_preview_" + str(model_id)
+            )
+        )
         markup.add(
             types.InlineKeyboardButton(
                 "💎 Оформить подписку",
@@ -121,6 +120,7 @@ def get_girl_profile_keyboard(model_id: int, has_premium: bool, has_fan: bool) -
             )
         )
 
+    # Кнопка Назад — всегда возвращает на первую страницу каталога
     markup.add(
         types.InlineKeyboardButton("« Назад к каталогу", callback_data="girls")
     )
@@ -196,7 +196,7 @@ def show_catalog(bot, chat_id: int, message_id: int,
     if sub["active"]:
         sub_type_val = sub.get("type") or ""
         if "premium" in sub_type_val or sub_type_val == "test_2min":
-            access_text = "👑 Premium — полный доступ!"
+            access_text = "👑 У тебя Premium — полный доступ!"
         else:
             access_text = "🌸 У тебя Fan — превью профилей"
     else:
@@ -501,17 +501,10 @@ def register_girls_handlers(bot):
         sub = check_subscription(user_id)
 
         sub_type = sub.get("type") or ""
-        if not sub["active"]:
+        if not sub["active"] or ("premium" not in sub_type and sub_type != "test_2min"):
             bot.answer_callback_query(
                 call.id,
-                "🔒 Нужна подписка!\n\nОформи Fan или Premium в меню 💎",
-                show_alert=True
-            )
-            return
-        if "premium" not in sub_type and sub_type != "test_2min":
-            bot.answer_callback_query(
-                call.id,
-                "👑 Только для Premium!\n\nУ тебя Fan — весь контент доступен по Premium 👑",
+                "👑 Только для Premium подписчиков!\n\nОформи Premium в меню 💎",
                 show_alert=True
             )
             return
@@ -593,7 +586,6 @@ def register_girls_handlers(bot):
             bot.answer_callback_query(call.id)
             return
 
-        # Красивый попап для пользователя
         bot.answer_callback_query(
             call.id,
             "💌 Запрос принят!\n\n"
@@ -602,7 +594,6 @@ def register_girls_handlers(bot):
             show_alert=True
         )
 
-        # Уведомление администратору
         username = call.from_user.username
         full_name = call.from_user.full_name or "Пользователь"
         user_ref = "@" + username if username else full_name
@@ -633,3 +624,13 @@ def register_girls_handlers(bot):
                 )
             except Exception as e:
                 print("[CONTACT] Ошибка уведомления: " + str(e))
+
+        notify_channel(
+            bot,
+            "💌 Запрос на знакомство\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👤 " + user_ref + "\n"
+            "🆔 ID: " + str(user_id) + "\n"
+            "💳 Подписка: " + sub_name + "\n"
+            "💕 Интересует: " + model["name"]
+        )

@@ -12,6 +12,8 @@ import time
 from telebot import types
 from config import ADMIN_IDS, LTC_ADDRESS
 from database.reviews import add_review, get_reviews, delete_review
+from database.settings import get_setting, set_setting
+from utils.notify import notify_channel
 from database.models import (
     add_model,
     update_model,
@@ -35,82 +37,63 @@ def is_admin(user_id: int) -> bool:
 
 def register_admin_handlers(bot):
 
-    # ── Отзывы ───────────────────────────────
+    # ── Фото приветствия ─────────────────────
 
-    @bot.message_handler(commands=['addreview'])
-    def add_review_command(message):
+    @bot.message_handler(commands=['setwelcomephoto'])
+    def set_welcome_photo_command(message):
         if not is_admin(message.from_user.id):
             return
-        admin_states[message.from_user.id] = "waiting_review_photo"
+        admin_states[message.from_user.id] = "waiting_welcome_photo"
+        current = get_setting("welcome_photo")
+        status = "✅ Установлено" if current else "❌ Не установлено"
         bot.send_message(
             message.chat.id,
-            "⭐ Отправь фото отзыва.\n\n"
-            "Можешь добавить подпись к фото — она будет показана под ним."
+            "🖼 Фото приветствия (/start)\n\n"
+            "Статус: " + status + "\n\n"
+            "Отправь новое фото — оно встанет на место.\n"
+            "/delwelcomephoto — убрать фото"
         )
 
-    @bot.message_handler(commands=['delreview'])
-    def del_review_command(message):
+    @bot.message_handler(commands=['delwelcomephoto'])
+    def del_welcome_photo_command(message):
         if not is_admin(message.from_user.id):
             return
-        parts = message.text.split()
-        if len(parts) < 2 or not parts[1].isdigit():
-            reviews = get_reviews()
-            if not reviews:
-                bot.send_message(message.chat.id, "Отзывов пока нет")
-                return
-            lines = ["📋 Отзывы:"]
-            for r in reviews:
-                lines.append("ID " + str(r["id"]) + " — " + (r.get("caption") or "без подписи"))
-            bot.send_message(message.chat.id, "\n".join(lines) + "\n\nУдалить: /delreview ID")
-            return
-        delete_review(int(parts[1]))
-        bot.send_message(message.chat.id, "✅ Отзыв удалён")
+        set_setting("welcome_photo", "")
+        bot.send_message(message.chat.id, "✅ Фото приветствия удалено.")
 
     @bot.message_handler(
         content_types=['photo'],
         func=lambda msg: (
             is_admin(msg.from_user.id)
-            and admin_states.get(msg.from_user.id) == "waiting_review_photo"
+            and admin_states.get(msg.from_user.id) == "waiting_welcome_photo"
         )
     )
-    def process_review_photo(message):
+    def process_welcome_photo(message):
         file_id = message.photo[-1].file_id
-        caption = message.caption or None
-        review_id = add_review(file_id, caption)
+        set_setting("welcome_photo", file_id)
         del admin_states[message.from_user.id]
         bot.send_message(
             message.chat.id,
-            "✅ Отзыв добавлен! ID: " + str(review_id) + "\n\n"
-            "Для удаления: /delreview " + str(review_id)
-        )
-
-    # ── Проверка каналов ──────────────────────
-
-    @bot.message_handler(commands=['channels'])
-    def channels_command(message):
-        from config import MEDIA_CHANNEL_ID, ADMIN_CHANNEL_ID
-        bot.send_message(
-            message.chat.id,
-            "📡 Каналы в конфиге:\n\n"
-            "📢 Медиа ID: " + str(MEDIA_CHANNEL_ID) + "\n"
-            "🔒 Админ ID: " + str(ADMIN_CHANNEL_ID) + "\n\n"
-            "Твой ID: " + str(message.from_user.id) + "\n"
-            "Ты админ: " + str(is_admin(message.from_user.id))
+            "✅ Фото приветствия сохранено!\n\n"
+            "Теперь при /start пользователи видят это фото.\n"
+            "Проверь — напиши /start"
         )
 
     # ── Проверка кошелька ─────────────────────
 
     @bot.message_handler(commands=['wallet'])
     def wallet_command(message):
+        """Показывает текущий LTC адрес из .env"""
         if not is_admin(message.from_user.id):
             return
-        from config import MEDIA_CHANNEL_ID, ADMIN_CHANNEL_ID
-        addr = LTC_ADDRESS or "НЕ ЗАДАН"
+        addr = LTC_ADDRESS or "❌ НЕ ЗАДАН"
         bot.send_message(
             message.chat.id,
-            "💳 LTC адрес:\n" + str(addr) + "\n\n"
-            "📡 Медиа канал ID: " + str(MEDIA_CHANNEL_ID) + "\n"
-            "🔒 Админ канал ID: " + str(ADMIN_CHANNEL_ID)
+            "💳 Текущий LTC адрес:\n\n"
+            "`" + str(addr) + "`\n\n"
+            "Чтобы изменить — отредактируй .env:\n"
+            "LTC_ADDRESS=твой_адрес",
+            parse_mode="Markdown"
         )
 
     # ── Активация любой подписки вручную ─────
@@ -195,6 +178,16 @@ def register_admin_handlers(bot):
             )
         except Exception as e:
             print("[ACTIVATE] Не удалось уведомить: " + str(e))
+
+        notify_channel(
+            bot,
+            "👑 Подписка активирована вручную\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👤 User: " + str(target_id) + "\n"
+            "💳 План: " + p["name"] + "\n"
+            "⏰ Срок: " + duration + "\n"
+            "👮 Активировал: " + str(message.from_user.id)
+        )
 
         # Для теста — запускаем уведомление об истечении
         if p["minutes"] > 0:
@@ -314,10 +307,10 @@ def register_admin_handlers(bot):
             message.chat.id,
             "👩 Добавление новой модели\n\n"
             "Отправь данные в формате:\n"
-            "Имя | Дата рождения или Возраст | Описание\n\n"
+            "Имя | Дата рождения или Возраст | Ник | Описание\n\n"
             "Примеры:\n"
-            "Марина | 15.05.1998 | Нежная и страстная 🔥\n"
-            "Анна | 24 | Яркая красавица ✨\n\n"
+            "Марина | 15.05.1998 | marina_mol | Нежная и страстная 🔥\n"
+            "Анна | 24 | anna_md | Яркая красавица ✨\n\n"
             "Дата рождения — возраст будет обновляться автоматически!"
         )
         admin_states[message.from_user.id] = "waiting_model_data"
@@ -383,11 +376,12 @@ def register_admin_handlers(bot):
             "Имя: " + model["name"] + "\n"
             "Возраст: " + str(age) + " лет\n"
             "Дата рождения: " + str(birth) + "\n"
+            "@" + (model["username"] or "нет") + "\n"
             "Описание: " + (model.get("description") or "нет") + "\n\n"
             "Отправь новые данные в формате:\n"
-            "Имя | Дата/Возраст | Описание\n\n"
+            "Имя | Дата/Возраст | Ник | Описание\n\n"
             "Чтобы оставить поле без изменений — напиши точку:\n"
-            ". | 12.03.1999 | Новое описание"
+            ". | 12.03.1999 | . | Новое описание"
         )
 
     # ── Деактивировать модель ────────────────
@@ -414,52 +408,6 @@ def register_admin_handlers(bot):
             message.chat.id,
             "✅ Модель " + model["name"] + " (ID " + str(model_id) + ") деактивирована.\n"
             "Она скрыта из каталога. Данные не удалены."
-        )
-
-    # ── Заменить главное фото модели ────────
-
-    @bot.message_handler(commands=['setphoto'])
-    def set_photo_command(message):
-        if not is_admin(message.from_user.id):
-            return
-        parts = message.text.split()
-        if len(parts) < 2 or not parts[1].isdigit():
-            bot.send_message(message.chat.id, "❌ Укажи ID: /setphoto 3")
-            return
-        model_id = int(parts[1])
-        model = get_model(model_id)
-        if not model:
-            bot.send_message(message.chat.id, "❌ Модель не найдена")
-            return
-        admin_states[message.from_user.id] = "waiting_preview_photo_" + str(model_id)
-        bot.send_message(
-            message.chat.id,
-            "📸 Отправь новое главное фото для " + model["name"] + ":"
-        )
-
-    # ── Добавить медиа к существующей модели ─
-
-    @bot.message_handler(commands=['addmedia'])
-    def add_media_command(message):
-        if not is_admin(message.from_user.id):
-            return
-        parts = message.text.split()
-        if len(parts) < 2 or not parts[1].isdigit():
-            bot.send_message(message.chat.id, "❌ Укажи ID: /addmedia 3")
-            return
-        model_id = int(parts[1])
-        model = get_model(model_id)
-        if not model:
-            bot.send_message(message.chat.id, "❌ Модель не найдена")
-            return
-        admin_states[message.from_user.id] = "waiting_media_" + str(model_id)
-        all_media = get_all_media(model_id)
-        bot.send_message(
-            message.chat.id,
-            "📎 Добавление медиа к " + model["name"] + "\n\n"
-            "Уже загружено: " + str(len(all_media)) + " файлов\n"
-            "Первые 3 — Fan превью, остальные — Premium\n\n"
-            "Отправляй фото/видео. Готово → /done"
         )
 
     # ── Завершить загрузку медиа ─────────────
@@ -490,69 +438,12 @@ def register_admin_handlers(bot):
             message.chat.id,
             "🎉 Модель успешно добавлена!\n\n"
             "👩 Имя: " + model["name"] + "\n"
-            "🎂 Возраст: " + str(model["age"]) + " лет\n\n"
+            "🎂 Возраст: " + str(model["age"]) + " лет\n"
+            "📱 Ник: @" + (model["username"] or "нет") + "\n\n"
             "📸 Всего медиа: " + str(len(all_media)) + "\n"
             "👁 Превью Fan: " + str(len(preview_media)) + " фото\n"
             "🔒 Premium: " + str(len(all_media) - len(preview_media)) + " файлов"
         )
-
-    # ── Ответ пользователю через бота ────────
-
-    @bot.callback_query_handler(
-        func=lambda call: call.data.startswith("admin_reply_")
-    )
-    def admin_reply_callback(call):
-        if not is_admin(call.from_user.id):
-            return
-        bot.answer_callback_query(call.id)
-        target_id = int(call.data.replace("admin_reply_", ""))
-        admin_states[call.from_user.id] = "replying_to_" + str(target_id)
-        bot.send_message(
-            call.message.chat.id,
-            "✍️ Введи сообщение для пользователя:\n\n"
-            "Оно придёт от имени бота Miss Moldova ❤️\n\n"
-            "/cancel — отменить"
-        )
-
-    @bot.message_handler(commands=['cancel'])
-    def cancel_reply(message):
-        if not is_admin(message.from_user.id):
-            return
-        state = admin_states.pop(message.from_user.id, "")
-        if state.startswith("replying_to_"):
-            bot.send_message(message.chat.id, "❌ Отправка отменена")
-
-    @bot.message_handler(
-        func=lambda msg: (
-            is_admin(msg.from_user.id)
-            and str(admin_states.get(msg.from_user.id, "")).startswith("replying_to_")
-        )
-    )
-    def send_reply_to_user(message):
-        if not is_admin(message.from_user.id):
-            return
-        state = admin_states.pop(message.from_user.id, "")
-        target_id = int(state.replace("replying_to_", ""))
-        try:
-            from keyboards.inline import get_main_menu
-            bot.send_message(
-                target_id,
-                "💌 Сообщение от Miss Moldova\n"
-                "━━━━━━━━━━━━━━━\n\n"
-                + message.text +
-                "\n\n━━━━━━━━━━━━━━━\n"
-                "Miss Moldova ❤️",
-                reply_markup=get_main_menu()
-            )
-            bot.send_message(
-                message.chat.id,
-                "✅ Сообщение доставлено пользователю " + str(target_id)
-            )
-        except Exception as e:
-            bot.send_message(
-                message.chat.id,
-                "❌ Не удалось отправить: " + str(e)
-            )
 
     # ── Обработка текстовых данных модели ────
 
@@ -565,26 +456,27 @@ def register_admin_handlers(bot):
         )
     )
     def process_model_data(message):
-        """Парсит строку: Имя | Возраст/Дата | Описание"""
+        """Парсит строку: Имя | Возраст/Дата | Ник | Описание"""
         if not is_admin(message.from_user.id):
             return
 
         try:
             parts = [p.strip() for p in message.text.split("|")]
 
-            if len(parts) < 3:
+            if len(parts) < 4:
                 bot.send_message(
                     message.chat.id,
                     "❌ Неверный формат!\n"
-                    "Нужно: Имя | Дата/Возраст | Описание"
+                    "Нужно: Имя | Дата/Возраст | Ник | Описание"
                 )
                 return
 
             name = parts[0]
             age_or_date = parts[1]
-            description = parts[2]
+            username = parts[2]
+            description = parts[3]
 
-            model_id = add_model(name, age_or_date, "", description)
+            model_id = add_model(name, age_or_date, username, description)
 
             # Показываем вычисленный возраст
             model = get_model(model_id)
@@ -597,8 +489,18 @@ def register_admin_handlers(bot):
                 "✅ Модель добавлена!\n\n"
                 "👩 Имя: " + name + "\n"
                 "🎂 Возраст: " + str(age_show) + " лет\n"
+                "📱 Ник: @" + username + "\n"
                 "🆔 ID модели: " + str(model_id) + "\n\n"
                 "Теперь отправь главное фото профиля (превью):"
+            )
+
+            notify_channel(
+                bot,
+                "👩 Новая модель добавлена!\n"
+                "━━━━━━━━━━━━━━━\n"
+                "Имя: " + name + "\n"
+                "Возраст: " + str(age_show) + " лет\n"
+                "ID: " + str(model_id)
             )
 
         except Exception as e:
@@ -623,20 +525,21 @@ def register_admin_handlers(bot):
         try:
             parts = [p.strip() for p in message.text.split("|")]
 
-            if len(parts) < 3:
+            if len(parts) < 4:
                 bot.send_message(
                     message.chat.id,
                     "❌ Неверный формат!\n"
-                    "Нужно 3 поля через |. Точка = не менять."
+                    "Нужно 4 поля через |. Точка = не менять."
                 )
                 return
 
             # Точка = поле без изменений
             name = None if parts[0] == "." else parts[0]
             age_or_date = None if parts[1] == "." else parts[1]
-            description = None if parts[2] == "." else parts[2]
+            username = None if parts[2] == "." else parts[2]
+            description = None if parts[3] == "." else parts[3]
 
-            update_model(model_id, name, age_or_date, None, description)
+            update_model(model_id, name, age_or_date, username, description)
 
             del admin_states[message.from_user.id]
 
@@ -648,6 +551,7 @@ def register_admin_handlers(bot):
                     "✅ Модель обновлена!\n\n"
                     "👩 Имя: " + model["name"] + "\n"
                     "🎂 Возраст: " + str(model["age"]) + " лет\n"
+                    "📱 Ник: @" + (model["username"] or "нет") + "\n"
                     "📝 Описание: " + (model.get("description") or "нет")
                 )
         except Exception as e:
@@ -744,9 +648,9 @@ def register_admin_handlers(bot):
         bot.send_message(
             call.message.chat.id,
             "👩 Отправь данные модели:\n"
-            "Имя | Дата рождения или Возраст | Описание\n\n"
+            "Имя | Дата рождения или Возраст | Ник | Описание\n\n"
             "Пример:\n"
-            "Марина | 15.05.1998 | Нежная 🔥"
+            "Марина | 15.05.1998 | marina_mol | Нежная 🔥"
         )
         admin_states[call.from_user.id] = "waiting_model_data"
 
@@ -782,35 +686,34 @@ def register_admin_handlers(bot):
             return
 
         from database import get_connection
-        import time as _time
         conn = get_connection()
         cursor = conn.cursor()
 
-        cursor.execute("SELECT COUNT(*) as n FROM users")
+        cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
 
-        now_ts = int(_time.time())
         cursor.execute(
-            "SELECT COUNT(*) as n FROM users WHERE subscription_type IS NOT NULL "
-            "AND subscription_expires > %s", (now_ts,)
+            "SELECT COUNT(*) FROM users WHERE subscription_type IS NOT NULL "
+            "AND subscription_expires > strftime('%s', 'now')"
         )
         active_subs = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) as n FROM users WHERE subscription_type = 'fan_30'")
+        cursor.execute("SELECT COUNT(*) FROM users WHERE subscription_type = 'fan_30'")
         fan_count = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) as n FROM users WHERE subscription_type = 'premium_90'")
+        cursor.execute("SELECT COUNT(*) FROM users WHERE subscription_type = 'premium_90'")
         premium_count = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) as n FROM payments WHERE status = 'confirmed'")
+        cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'confirmed'")
         payments_confirmed = cursor.fetchone()[0]
 
         cursor.execute(
-            "SELECT COALESCE(SUM(amount_usd), 0) as s FROM payments WHERE status = 'confirmed'"
+            "SELECT SUM(amount_usd) FROM payments WHERE status = 'confirmed'"
         )
-        total_usd = round(cursor.fetchone()[0], 2)
+        total_usd_row = cursor.fetchone()[0]
+        total_usd = round(total_usd_row, 2) if total_usd_row else 0
 
-        cursor.execute("SELECT COUNT(*) as n FROM models WHERE is_active = 1")
+        cursor.execute("SELECT COUNT(*) FROM models WHERE is_active = 1")
         models_count = cursor.fetchone()[0]
 
         conn.close()
