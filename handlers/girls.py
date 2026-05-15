@@ -103,6 +103,15 @@ def get_girl_profile_keyboard(model_id: int, has_premium: bool, has_fan: bool) -
         )
     )
 
+    # Написать девушке — для подписчиков
+    if has_fan or has_premium:
+        markup.add(
+            types.InlineKeyboardButton(
+                "💌 Написать девушке",
+                callback_data="contact_girl_" + str(model_id)
+            )
+        )
+
     # Кнопка подписки — только если нет никакой
     if not has_fan and not has_premium:
         markup.add(
@@ -554,3 +563,65 @@ def register_girls_handlers(bot):
             ),
             reply_markup=get_back_to_catalog_keyboard(model_id)
         )
+
+    # ── Написать девушке ─────────────────────
+
+    @bot.callback_query_handler(
+        func=lambda call: call.data.startswith("contact_girl_")
+    )
+    def contact_girl(call):
+        """Запрос на знакомство — уведомляет админа, показывает попап."""
+        user_id = call.from_user.id
+
+        try:
+            model_id = int(call.data.replace("contact_girl_", ""))
+        except ValueError:
+            bot.answer_callback_query(call.id)
+            return
+
+        sub = check_subscription(user_id)
+        if not sub["active"]:
+            bot.answer_callback_query(
+                call.id,
+                "🔒 Для связи с девушками нужна подписка\n\nОформи Fan или Premium 💎",
+                show_alert=True
+            )
+            return
+
+        model = get_model(model_id)
+        if not model:
+            bot.answer_callback_query(call.id)
+            return
+
+        # Красивый попап для пользователя
+        bot.answer_callback_query(
+            call.id,
+            "💌 Запрос принят!\n\n"
+            "Администрация Miss Moldova свяжется с тобой в ближайшее время.\n\n"
+            "Ожидай сообщения ❤️",
+            show_alert=True
+        )
+
+        # Уведомление администратору
+        username = call.from_user.username
+        full_name = call.from_user.full_name or "Пользователь"
+        user_ref = "@" + username if username else full_name
+        sub_type = sub.get("type") or ""
+        sub_name = "👑 Premium" if "premium" in sub_type else "🌸 Fan"
+
+        from config import ADMIN_IDS
+        for admin_id in ADMIN_IDS:
+            try:
+                bot.send_message(
+                    admin_id,
+                    "💌 Новый запрос на знакомство!\n"
+                    "━━━━━━━━━━━━━━━\n\n"
+                    "👤 Пользователь: " + user_ref + "\n"
+                    "🆔 ID: " + str(user_id) + "\n"
+                    "💳 Подписка: " + sub_name + "\n\n"
+                    "💕 Интересует: " + model["name"] + "\n\n"
+                    "━━━━━━━━━━━━━━━\n"
+                    "Напиши пользователю первой ↗️"
+                )
+            except Exception as e:
+                print("[CONTACT] Ошибка уведомления: " + str(e))
