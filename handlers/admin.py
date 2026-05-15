@@ -388,6 +388,64 @@ def register_admin_handlers(bot):
             "🔒 Premium: " + str(len(all_media) - len(preview_media)) + " файлов"
         )
 
+    # ── Ответ пользователю через бота ────────
+
+    @bot.callback_query_handler(
+        func=lambda call: call.data.startswith("admin_reply_")
+    )
+    def admin_reply_callback(call):
+        if not is_admin(call.from_user.id):
+            return
+        bot.answer_callback_query(call.id)
+        target_id = int(call.data.replace("admin_reply_", ""))
+        admin_states[call.from_user.id] = "replying_to_" + str(target_id)
+        bot.send_message(
+            call.message.chat.id,
+            "✍️ Введи сообщение для пользователя:\n\n"
+            "Оно придёт от имени бота Miss Moldova ❤️\n\n"
+            "/cancel — отменить"
+        )
+
+    @bot.message_handler(commands=['cancel'])
+    def cancel_reply(message):
+        if not is_admin(message.from_user.id):
+            return
+        state = admin_states.pop(message.from_user.id, "")
+        if state.startswith("replying_to_"):
+            bot.send_message(message.chat.id, "❌ Отправка отменена")
+
+    @bot.message_handler(
+        func=lambda msg: (
+            is_admin(msg.from_user.id)
+            and str(admin_states.get(msg.from_user.id, "")).startswith("replying_to_")
+        )
+    )
+    def send_reply_to_user(message):
+        if not is_admin(message.from_user.id):
+            return
+        state = admin_states.pop(message.from_user.id, "")
+        target_id = int(state.replace("replying_to_", ""))
+        try:
+            from keyboards.inline import get_main_menu
+            bot.send_message(
+                target_id,
+                "💌 Сообщение от Miss Moldova\n"
+                "━━━━━━━━━━━━━━━\n\n"
+                + message.text +
+                "\n\n━━━━━━━━━━━━━━━\n"
+                "Miss Moldova ❤️",
+                reply_markup=get_main_menu()
+            )
+            bot.send_message(
+                message.chat.id,
+                "✅ Сообщение доставлено пользователю " + str(target_id)
+            )
+        except Exception as e:
+            bot.send_message(
+                message.chat.id,
+                "❌ Не удалось отправить: " + str(e)
+            )
+
     # ── Обработка текстовых данных модели ────
 
     @bot.message_handler(

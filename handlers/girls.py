@@ -610,6 +610,14 @@ def register_girls_handlers(bot):
         sub_name = "👑 Premium" if "premium" in sub_type else "🌸 Fan"
 
         from config import ADMIN_IDS
+        reply_keyboard = types.InlineKeyboardMarkup()
+        reply_keyboard.add(
+            types.InlineKeyboardButton(
+                "💬 Написать пользователю",
+                callback_data="admin_reply_" + str(user_id)
+            )
+        )
+
         for admin_id in ADMIN_IDS:
             try:
                 bot.send_message(
@@ -620,8 +628,8 @@ def register_girls_handlers(bot):
                     "🆔 ID: " + str(user_id) + "\n"
                     "💳 Подписка: " + sub_name + "\n\n"
                     "💕 Интересует: " + model["name"] + "\n\n"
-                    "━━━━━━━━━━━━━━━\n"
-                    "Напиши пользователю первой ↗️"
+                    "━━━━━━━━━━━━━━━",
+                    reply_markup=reply_keyboard
                 )
             except Exception as e:
                 print("[CONTACT] Ошибка уведомления: " + str(e))
