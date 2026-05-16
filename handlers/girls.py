@@ -364,31 +364,50 @@ def register_girls_handlers(bot):
         )
 
         keyboard = get_girl_profile_keyboard(model_id, has_premium, has_fan)
-        preview_photo = model.get("preview_photo")
+        preview_photo  = model.get("preview_photo")
+        preview_photo2 = model.get("preview_photo_2")
 
         if preview_photo:
-            # Удаляем старое (текстовое) сообщение, отправляем фото с профилем
             try:
                 bot.delete_message(call.message.chat.id, call.message.message_id)
             except Exception:
                 pass
-            try:
-                bot.send_photo(
-                    chat_id=call.message.chat.id,
-                    photo=preview_photo,
-                    caption=text,
-                    reply_markup=keyboard
-                )
-            except Exception as e:
-                print("[GIRLS] Ошибка отправки фото профиля: " + str(e))
-                # Fallback — текстовое сообщение
+
+            if preview_photo2:
+                # Две аватарки — отправляем как альбом, затем текст с клавиатурой
+                try:
+                    bot.send_media_group(
+                        call.message.chat.id,
+                        [
+                            types.InputMediaPhoto(preview_photo),
+                            types.InputMediaPhoto(preview_photo2)
+                        ]
+                    )
+                except Exception as e:
+                    print("[GIRLS] Ошибка media_group: " + str(e))
                 bot.send_message(
                     chat_id=call.message.chat.id,
                     text=text,
                     reply_markup=keyboard
                 )
+            else:
+                # Одна аватарка — фото с подписью и клавиатурой
+                try:
+                    bot.send_photo(
+                        chat_id=call.message.chat.id,
+                        photo=preview_photo,
+                        caption=text,
+                        reply_markup=keyboard
+                    )
+                except Exception as e:
+                    print("[GIRLS] Ошибка отправки фото профиля: " + str(e))
+                    bot.send_message(
+                        chat_id=call.message.chat.id,
+                        text=text,
+                        reply_markup=keyboard
+                    )
         else:
-            # Нет фото — просто редактируем текст
+            # Нет фото — редактируем текст
             try:
                 bot.edit_message_text(
                     chat_id=call.message.chat.id,

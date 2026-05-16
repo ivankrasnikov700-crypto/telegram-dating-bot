@@ -1,10 +1,5 @@
 # handlers/admin.py
-# Админ панель — добавление моделей, редактирование, статистика
-# Добавлено:
-# 1. Поддержка birth_date при добавлении модели
-# 2. Команда /editmodel ID для редактирования профиля
-# 3. Команда /delmodel ID для деактивации модели
-# 4. Улучшенный вывод статистики
+# Админ панель — добавление моделей, управление контентом, отзывами, каналами
 
 import threading
 import time
@@ -21,6 +16,7 @@ from database.models import (
     get_model,
     add_model_media,
     set_preview_photo,
+    set_preview_photo_2,
     deactivate_model,
     get_preview_media,
     get_all_media,
@@ -37,6 +33,56 @@ def is_admin(user_id: int) -> bool:
 
 def register_admin_handlers(bot):
 
+    # ── Отзывы ───────────────────────────────
+
+    @bot.message_handler(commands=['addreview'])
+    def add_review_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        admin_states[message.from_user.id] = "waiting_review_photo"
+        bot.send_message(
+            message.chat.id,
+            "⭐ Отправь фото отзыва.\n\n"
+            "Можешь добавить подпись к фото — она будет показана под ним.\n\n"
+            "/cancel — отменить"
+        )
+
+    @bot.message_handler(commands=['delreview'])
+    def del_review_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            reviews = get_reviews()
+            if not reviews:
+                bot.send_message(message.chat.id, "Отзывов пока нет")
+                return
+            lines = ["📋 Отзывы:"]
+            for r in reviews:
+                lines.append("ID " + str(r["id"]) + " — " + (r.get("caption") or "без подписи"))
+            bot.send_message(message.chat.id, "\n".join(lines) + "\n\nУдалить: /delreview ID")
+            return
+        delete_review(int(parts[1]))
+        bot.send_message(message.chat.id, "✅ Отзыв удалён")
+
+    @bot.message_handler(
+        content_types=['photo'],
+        func=lambda msg: (
+            is_admin(msg.from_user.id)
+            and admin_states.get(msg.from_user.id) == "waiting_review_photo"
+        )
+    )
+    def process_review_photo(message):
+        file_id   = message.photo[-1].file_id
+        caption   = message.caption or None
+        review_id = add_review(file_id, caption)
+        del admin_states[message.from_user.id]
+        bot.send_message(
+            message.chat.id,
+            "✅ Отзыв добавлен! ID: " + str(review_id) + "\n\n"
+            "Для удаления: /delreview " + str(review_id)
+        )
+
     # ── Фото приветствия ─────────────────────
 
     @bot.message_handler(commands=['setwelcomephoto'])
@@ -45,7 +91,7 @@ def register_admin_handlers(bot):
             return
         admin_states[message.from_user.id] = "waiting_welcome_photo"
         current = get_setting("welcome_photo")
-        status = "✅ Установлено" if current else "❌ Не установлено"
+        status  = "✅ Установлено" if current else "❌ Не установлено"
         bot.send_message(
             message.chat.id,
             "🖼 Фото приветствия (/start)\n\n"
@@ -79,33 +125,39 @@ def register_admin_handlers(bot):
             "Проверь — напиши /start"
         )
 
-    # ── Проверка кошелька ─────────────────────
+    # ── Каналы ───────────────────────────────
+
+    @bot.message_handler(commands=['channels'])
+    def channels_command(message):
+        from config import MEDIA_CHANNEL_ID, ADMIN_CHANNEL_ID
+        bot.send_message(
+            message.chat.id,
+            "📡 Каналы в конфиге:\n\n"
+            "📢 Медиа ID: " + str(MEDIA_CHANNEL_ID) + "\n"
+            "🔒 Админ ID: " + str(ADMIN_CHANNEL_ID) + "\n\n"
+            "Твой ID: " + str(message.from_user.id) + "\n"
+            "Ты админ: " + str(is_admin(message.from_user.id))
+        )
+
+    # ── Кошелёк ──────────────────────────────
 
     @bot.message_handler(commands=['wallet'])
     def wallet_command(message):
-        """Показывает текущий LTC адрес из .env"""
         if not is_admin(message.from_user.id):
             return
+        from config import MEDIA_CHANNEL_ID, ADMIN_CHANNEL_ID
         addr = LTC_ADDRESS or "❌ НЕ ЗАДАН"
         bot.send_message(
             message.chat.id,
-            "💳 Текущий LTC адрес:\n\n"
-            "`" + str(addr) + "`\n\n"
-            "Чтобы изменить — отредактируй .env:\n"
-            "LTC_ADDRESS=твой_адрес",
-            parse_mode="Markdown"
+            "💳 LTC адрес: " + str(addr) + "\n\n"
+            "📡 Медиа канал ID: " + str(MEDIA_CHANNEL_ID) + "\n"
+            "🔒 Админ канал ID: " + str(ADMIN_CHANNEL_ID)
         )
 
-    # ── Активация любой подписки вручную ─────
+    # ── Активация подписки вручную ────────────
 
     @bot.message_handler(commands=['activate'])
     def activate_command(message):
-        """
-        Активирует подписку для пользователя без оплаты.
-        Использование: /activate USER_ID PLAN
-        Планы: fan_30 | premium_90 | test_2min
-        Пример: /activate 7406734422 fan_30
-        """
         if not is_admin(message.from_user.id):
             bot.send_message(message.chat.id, "❌ Нет доступа")
             return
@@ -130,20 +182,16 @@ def register_admin_handlers(bot):
             return
 
         target_id = int(parts[1])
-        plan = parts[2].lower()
+        plan      = parts[2].lower()
 
         PLANS = {
-            "fan_30":     {"name": "🌸 Fan",    "days": 30,  "minutes": 0, "crystals": 250},
-            "premium_90": {"name": "👑 Premium", "days": 90,  "minutes": 0, "crystals": 600},
-            "test_2min":  {"name": "🧪 Test",   "days": 0,   "minutes": 2, "crystals": 10},
+            "fan_30":     {"name": "🌸 Fan",    "days": 30, "minutes": 0, "crystals": 250},
+            "premium_90": {"name": "👑 Premium", "days": 90, "minutes": 0, "crystals": 600},
+            "test_2min":  {"name": "🧪 Test",   "days": 0,  "minutes": 2, "crystals": 10},
         }
 
         if plan not in PLANS:
-            bot.send_message(
-                message.chat.id,
-                "❌ Неизвестный план: " + plan + "\n\n"
-                "Доступные: fan_30, premium_90, test_2min"
-            )
+            bot.send_message(message.chat.id, "❌ Неизвестный план: " + plan)
             return
 
         p = PLANS[plan]
@@ -151,10 +199,7 @@ def register_admin_handlers(bot):
         register_user(target_id, "", "User")
         activate_subscription(target_id, plan, p["days"], p["crystals"], minutes=p["minutes"])
 
-        if p["minutes"] > 0:
-            duration = str(p["minutes"]) + " минуты"
-        else:
-            duration = str(p["days"]) + " дней"
+        duration = str(p["minutes"]) + " минуты" if p["minutes"] > 0 else str(p["days"]) + " дней"
 
         bot.send_message(
             message.chat.id,
@@ -165,7 +210,6 @@ def register_admin_handlers(bot):
             "💎 Кристаллов: " + str(p["crystals"])
         )
 
-        # Уведомляем пользователя
         try:
             from keyboards.inline import get_main_menu
             bot.send_message(
@@ -189,7 +233,6 @@ def register_admin_handlers(bot):
             "👮 Активировал: " + str(message.from_user.id)
         )
 
-        # Для теста — запускаем уведомление об истечении
         if p["minutes"] > 0:
             def _expire():
                 time.sleep(p["minutes"] * 60)
@@ -199,82 +242,12 @@ def register_admin_handlers(bot):
                         from keyboards.inline import get_subscription_menu
                         bot.send_message(
                             target_id,
-                            "⏰ Тестовая подписка истекла!\n\n"
-                            "Полный цикл работает корректно ✅",
+                            "⏰ Тестовая подписка истекла!\n\nПолный цикл работает корректно ✅",
                             reply_markup=get_subscription_menu()
                         )
                     except Exception as e:
                         print("[ACTIVATE EXPIRY] " + str(e))
             threading.Thread(target=_expire, daemon=True).start()
-
-    # ── Тестовая активация подписки ──────────
-
-    @bot.message_handler(commands=['testactivate'])
-    def test_activate_command(message):
-        """
-        Прямая активация test_2min без оплаты — только для тестирования.
-        Использование: /testactivate [user_id]
-        Без user_id — активирует себе.
-        УДАЛИТЬ перед продакшном вместе с тестовой подпиской.
-        """
-        if not is_admin(message.from_user.id):
-            bot.send_message(message.chat.id, "❌ Нет доступа")
-            return
-
-        parts = message.text.split()
-        if len(parts) > 1 and parts[1].isdigit():
-            target_id = int(parts[1])
-        else:
-            target_id = message.from_user.id
-
-        from database import register_user, activate_subscription
-        register_user(target_id, "", "Test User")
-        activate_subscription(target_id, "test_2min", 0, 10, minutes=2)
-
-        bot.send_message(
-            message.chat.id,
-            "✅ Тестовая подписка активирована!\n\n"
-            "👤 User ID: " + str(target_id) + "\n"
-            "⏱ Срок: 2 минуты\n"
-            "💎 Начислено: 10 кристаллов\n\n"
-            "Уведомление об истечении придёт через 2 мин ⏰"
-        )
-
-        # Уведомляем пользователя что подписка активна
-        if target_id != message.from_user.id:
-            try:
-                from keyboards.inline import get_main_menu
-                bot.send_message(
-                    target_id,
-                    "✅ Тестовая Premium подписка активирована!\n\n"
-                    "⏱ Срок: 2 минуты\n"
-                    "💎 Начислено: 10 кристаллов\n\n"
-                    "Проверь профиль чтобы убедиться 👇",
-                    reply_markup=get_main_menu()
-                )
-            except Exception as e:
-                print("[TESTACTIVATE] Не удалось уведомить user: " + str(e))
-
-        # Запускаем уведомление об истечении
-        def _expiry_notify():
-            time.sleep(2 * 60)
-            from database import check_subscription
-            sub = check_subscription(target_id)
-            if not sub["active"]:
-                try:
-                    from keyboards.inline import get_subscription_menu
-                    notify_chat = target_id if target_id != message.from_user.id else message.chat.id
-                    bot.send_message(
-                        notify_chat,
-                        "⏰ Тестовая подписка истекла!\n\n"
-                        "Полный цикл работает корректно ✅\n\n"
-                        "Готов перейти на боевую подписку? 👇",
-                        reply_markup=get_subscription_menu()
-                    )
-                except Exception as e:
-                    print("[TESTACTIVATE EXPIRY] " + str(e))
-
-        threading.Thread(target=_expiry_notify, daemon=True).start()
 
     # ── Главная панель ───────────────────────
 
@@ -286,9 +259,9 @@ def register_admin_handlers(bot):
 
         markup = types.InlineKeyboardMarkup(row_width=1)
         markup.add(
-            types.InlineKeyboardButton("👩 Добавить модель", callback_data="admin_add_model"),
-            types.InlineKeyboardButton("📋 Список моделей", callback_data="admin_list_models"),
-            types.InlineKeyboardButton("📊 Статистика", callback_data="admin_stats")
+            types.InlineKeyboardButton("👩 Добавить модель",  callback_data="admin_add_model"),
+            types.InlineKeyboardButton("📋 Список моделей",   callback_data="admin_list_models"),
+            types.InlineKeyboardButton("📊 Статистика",       callback_data="admin_stats")
         )
         bot.send_message(
             message.chat.id,
@@ -302,16 +275,15 @@ def register_admin_handlers(bot):
     def add_model_command(message):
         if not is_admin(message.from_user.id):
             return
-
         bot.send_message(
             message.chat.id,
             "👩 Добавление новой модели\n\n"
             "Отправь данные в формате:\n"
-            "Имя | Дата рождения или Возраст | Ник | Описание\n\n"
+            "Имя | Дата рождения или Возраст | Описание\n\n"
             "Примеры:\n"
-            "Марина | 15.05.1998 | marina_mol | Нежная и страстная 🔥\n"
-            "Анна | 24 | anna_md | Яркая красавица ✨\n\n"
-            "Дата рождения — возраст будет обновляться автоматически!"
+            "Марина | 15.05.1998 | Нежная и страстная 🔥\n"
+            "Анна | 24 | Яркая красавица ✨\n\n"
+            "Дата рождения — возраст обновляется автоматически!"
         )
         admin_states[message.from_user.id] = "waiting_model_data"
 
@@ -321,23 +293,17 @@ def register_admin_handlers(bot):
     def list_models_command(message):
         if not is_admin(message.from_user.id):
             return
-
         models = get_all_models()
-
         if not models:
             bot.send_message(message.chat.id, "📋 Моделей пока нет")
             return
-
         lines = ["📋 Список моделей:\n"]
         for model in models:
-            birth_info = ""
-            if model.get("birth_date"):
-                birth_info = " (ДР: " + model["birth_date"] + ")"
+            birth_info = (" (ДР: " + model["birth_date"] + ")") if model.get("birth_date") else ""
             lines.append(
                 "👩 " + model["name"] + " | " + str(model["age"]) + " лет" + birth_info + "\n"
-                "ID: " + str(model["id"]) + " | @" + (model["username"] or "нет")
+                "ID: " + str(model["id"])
             )
-
         bot.send_message(message.chat.id, "\n\n".join(lines))
 
     # ── Редактировать модель ─────────────────
@@ -346,42 +312,28 @@ def register_admin_handlers(bot):
     def edit_model_command(message):
         if not is_admin(message.from_user.id):
             return
-
         parts = message.text.split()
         if len(parts) < 2 or not parts[1].isdigit():
-            bot.send_message(
-                message.chat.id,
-                "❌ Укажи ID модели\n\n"
-                "Пример: /editmodel 3\n\n"
-                "Затем бот спросит что изменить."
-            )
+            bot.send_message(message.chat.id, "❌ Укажи ID модели\n\nПример: /editmodel 3")
             return
-
         model_id = int(parts[1])
-        model = get_model(model_id)
-
+        model    = get_model(model_id)
         if not model:
             bot.send_message(message.chat.id, "❌ Модель с ID " + str(model_id) + " не найдена")
             return
-
         admin_states[message.from_user.id] = "editing_model_" + str(model_id)
-
-        age = model.get("age", "?")
-        birth = model.get("birth_date", "не задана")
-
         bot.send_message(
             message.chat.id,
             "✏️ Редактирование: " + model["name"] + " (ID " + str(model_id) + ")\n\n"
             "Текущие данные:\n"
             "Имя: " + model["name"] + "\n"
-            "Возраст: " + str(age) + " лет\n"
-            "Дата рождения: " + str(birth) + "\n"
-            "@" + (model["username"] or "нет") + "\n"
+            "Возраст: " + str(model.get("age", "?")) + " лет\n"
+            "Дата рождения: " + str(model.get("birth_date", "не задана")) + "\n"
             "Описание: " + (model.get("description") or "нет") + "\n\n"
             "Отправь новые данные в формате:\n"
-            "Имя | Дата/Возраст | Ник | Описание\n\n"
-            "Чтобы оставить поле без изменений — напиши точку:\n"
-            ". | 12.03.1999 | . | Новое описание"
+            "Имя | Дата/Возраст | Описание\n\n"
+            "Точка = оставить без изменений:\n"
+            ". | 12.03.1999 | Новое описание"
         )
 
     # ── Деактивировать модель ────────────────
@@ -390,24 +342,78 @@ def register_admin_handlers(bot):
     def del_model_command(message):
         if not is_admin(message.from_user.id):
             return
-
         parts = message.text.split()
         if len(parts) < 2 or not parts[1].isdigit():
             bot.send_message(message.chat.id, "❌ Укажи ID: /delmodel 3")
             return
-
         model_id = int(parts[1])
-        model = get_model(model_id)
-
+        model    = get_model(model_id)
         if not model:
             bot.send_message(message.chat.id, "❌ Модель не найдена")
             return
-
         deactivate_model(model_id)
         bot.send_message(
             message.chat.id,
-            "✅ Модель " + model["name"] + " (ID " + str(model_id) + ") деактивирована.\n"
-            "Она скрыта из каталога. Данные не удалены."
+            "✅ Модель " + model["name"] + " (ID " + str(model_id) + ") деактивирована."
+        )
+
+    # ── Заменить главное фото модели ─────────
+
+    @bot.message_handler(commands=['setphoto'])
+    def set_photo_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Укажи ID: /setphoto 3")
+            return
+        model_id = int(parts[1])
+        model    = get_model(model_id)
+        if not model:
+            bot.send_message(message.chat.id, "❌ Модель не найдена")
+            return
+        admin_states[message.from_user.id] = "waiting_preview_photo_" + str(model_id)
+        bot.send_message(message.chat.id, "📸 Отправь аватарку 1 для " + model["name"] + ":")
+
+    @bot.message_handler(commands=['setphoto2'])
+    def set_photo2_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Укажи ID: /setphoto2 3")
+            return
+        model_id = int(parts[1])
+        model    = get_model(model_id)
+        if not model:
+            bot.send_message(message.chat.id, "❌ Модель не найдена")
+            return
+        admin_states[message.from_user.id] = "waiting_preview_photo2_" + str(model_id)
+        bot.send_message(message.chat.id, "📸 Отправь аватарку 2 для " + model["name"] + ":")
+
+    # ── Добавить медиа к модели ───────────────
+
+    @bot.message_handler(commands=['addmedia'])
+    def add_media_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Укажи ID: /addmedia 3")
+            return
+        model_id  = int(parts[1])
+        model     = get_model(model_id)
+        if not model:
+            bot.send_message(message.chat.id, "❌ Модель не найдена")
+            return
+        admin_states[message.from_user.id] = "waiting_media_" + str(model_id)
+        all_media = get_all_media(model_id)
+        bot.send_message(
+            message.chat.id,
+            "📎 Добавление медиа к " + model["name"] + "\n\n"
+            "Уже загружено: " + str(len(all_media)) + " файлов\n"
+            "Первые 3 — Fan превью, остальные — Premium\n\n"
+            "Отправляй фото/видео. Готово → /done"
         )
 
     # ── Завершить загрузку медиа ─────────────
@@ -416,71 +422,105 @@ def register_admin_handlers(bot):
     def done_adding_media(message):
         if not is_admin(message.from_user.id):
             return
-
         state = admin_states.get(message.from_user.id, "")
-
         if not state.startswith("waiting_media_"):
             bot.send_message(message.chat.id, "❌ Нет активной загрузки медиа")
             return
-
-        model_id = int(state.replace("waiting_media_", ""))
-        model = get_model(model_id)
-
+        model_id     = int(state.replace("waiting_media_", ""))
+        model        = get_model(model_id)
         if not model:
             return
-
-        all_media = get_all_media(model_id)
+        all_media    = get_all_media(model_id)
         preview_media = get_preview_media(model_id)
-
         del admin_states[message.from_user.id]
-
         bot.send_message(
             message.chat.id,
-            "🎉 Модель успешно добавлена!\n\n"
+            "🎉 Загрузка завершена!\n\n"
             "👩 Имя: " + model["name"] + "\n"
-            "🎂 Возраст: " + str(model["age"]) + " лет\n"
-            "📱 Ник: @" + (model["username"] or "нет") + "\n\n"
+            "🎂 Возраст: " + str(model["age"]) + " лет\n\n"
             "📸 Всего медиа: " + str(len(all_media)) + "\n"
             "👁 Превью Fan: " + str(len(preview_media)) + " фото\n"
             "🔒 Premium: " + str(len(all_media) - len(preview_media)) + " файлов"
         )
 
-    # ── Обработка текстовых данных модели ────
+    # ── Отмена текущей операции ──────────────
+
+    @bot.message_handler(commands=['cancel'])
+    def cancel_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        state = admin_states.pop(message.from_user.id, "")
+        if state:
+            bot.send_message(message.chat.id, "❌ Операция отменена")
+        else:
+            bot.send_message(message.chat.id, "Нет активной операции")
+
+    # ── Ответ пользователю через бота ────────
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("admin_reply_"))
+    def admin_reply_callback(call):
+        if not is_admin(call.from_user.id):
+            return
+        bot.answer_callback_query(call.id)
+        target_id = int(call.data.replace("admin_reply_", ""))
+        admin_states[call.from_user.id] = "replying_to_" + str(target_id)
+        bot.send_message(
+            call.message.chat.id,
+            "✍️ Введи сообщение для пользователя:\n\n"
+            "Оно придёт от имени бота Miss Moldova ❤️\n\n"
+            "/cancel — отменить"
+        )
 
     @bot.message_handler(
         func=lambda msg: (
             is_admin(msg.from_user.id)
-            and admin_states.get(msg.from_user.id) in (
-                "waiting_model_data",
+            and str(admin_states.get(msg.from_user.id, "")).startswith("replying_to_")
+        )
+    )
+    def send_reply_to_user(message):
+        state     = admin_states.pop(message.from_user.id, "")
+        target_id = int(state.replace("replying_to_", ""))
+        try:
+            from keyboards.inline import get_main_menu
+            bot.send_message(
+                target_id,
+                "💌 Сообщение от Miss Moldova\n"
+                "━━━━━━━━━━━━━━━\n\n"
+                + message.text +
+                "\n\n━━━━━━━━━━━━━━━\n"
+                "Miss Moldova ❤️",
+                reply_markup=get_main_menu()
             )
+            bot.send_message(message.chat.id, "✅ Сообщение доставлено пользователю " + str(target_id))
+        except Exception as e:
+            bot.send_message(message.chat.id, "❌ Не удалось отправить: " + str(e))
+
+    # ── Обработка текста модели ───────────────
+
+    @bot.message_handler(
+        func=lambda msg: (
+            is_admin(msg.from_user.id)
+            and admin_states.get(msg.from_user.id) == "waiting_model_data"
         )
     )
     def process_model_data(message):
-        """Парсит строку: Имя | Возраст/Дата | Ник | Описание"""
-        if not is_admin(message.from_user.id):
-            return
-
         try:
             parts = [p.strip() for p in message.text.split("|")]
-
-            if len(parts) < 4:
+            if len(parts) < 3:
                 bot.send_message(
                     message.chat.id,
                     "❌ Неверный формат!\n"
-                    "Нужно: Имя | Дата/Возраст | Ник | Описание"
+                    "Нужно: Имя | Дата/Возраст | Описание"
                 )
                 return
 
-            name = parts[0]
+            name        = parts[0]
             age_or_date = parts[1]
-            username = parts[2]
-            description = parts[3]
+            description = parts[2]
 
-            model_id = add_model(name, age_or_date, username, description)
-
-            # Показываем вычисленный возраст
-            model = get_model(model_id)
-            age_show = model["age"] if model else "?"
+            model_id  = add_model(name, age_or_date, "", description)
+            model     = get_model(model_id)
+            age_show  = model["age"] if model else "?"
 
             admin_states[message.from_user.id] = "waiting_preview_photo_" + str(model_id)
 
@@ -489,9 +529,8 @@ def register_admin_handlers(bot):
                 "✅ Модель добавлена!\n\n"
                 "👩 Имя: " + name + "\n"
                 "🎂 Возраст: " + str(age_show) + " лет\n"
-                "📱 Ник: @" + username + "\n"
                 "🆔 ID модели: " + str(model_id) + "\n\n"
-                "Теперь отправь главное фото профиля (превью):"
+                "Теперь отправь аватарку 1 (главное фото профиля):"
             )
 
             notify_channel(
@@ -502,7 +541,6 @@ def register_admin_handlers(bot):
                 "Возраст: " + str(age_show) + " лет\n"
                 "ID: " + str(model_id)
             )
-
         except Exception as e:
             bot.send_message(message.chat.id, "❌ Ошибка: " + str(e))
 
@@ -515,35 +553,18 @@ def register_admin_handlers(bot):
         )
     )
     def process_edit_model(message):
-        """Обновляет данные модели. Точка = оставить без изменений."""
-        if not is_admin(message.from_user.id):
-            return
-
-        state = admin_states.get(message.from_user.id, "")
+        state    = admin_states.get(message.from_user.id, "")
         model_id = int(state.replace("editing_model_", ""))
-
         try:
             parts = [p.strip() for p in message.text.split("|")]
-
-            if len(parts) < 4:
-                bot.send_message(
-                    message.chat.id,
-                    "❌ Неверный формат!\n"
-                    "Нужно 4 поля через |. Точка = не менять."
-                )
+            if len(parts) < 3:
+                bot.send_message(message.chat.id, "❌ Нужно 3 поля через |. Точка = не менять.")
                 return
-
-            # Точка = поле без изменений
-            name = None if parts[0] == "." else parts[0]
+            name        = None if parts[0] == "." else parts[0]
             age_or_date = None if parts[1] == "." else parts[1]
-            username = None if parts[2] == "." else parts[2]
-            description = None if parts[3] == "." else parts[3]
-
-            update_model(model_id, name, age_or_date, username, description)
-
+            description = None if parts[2] == "." else parts[2]
+            update_model(model_id, name, age_or_date, None, description)
             del admin_states[message.from_user.id]
-
-            # Показываем обновлённые данные
             model = get_model(model_id)
             if model:
                 bot.send_message(
@@ -551,7 +572,6 @@ def register_admin_handlers(bot):
                     "✅ Модель обновлена!\n\n"
                     "👩 Имя: " + model["name"] + "\n"
                     "🎂 Возраст: " + str(model["age"]) + " лет\n"
-                    "📱 Ник: @" + (model["username"] or "нет") + "\n"
                     "📝 Описание: " + (model.get("description") or "нет")
                 )
         except Exception as e:
@@ -565,44 +585,45 @@ def register_admin_handlers(bot):
             is_admin(msg.from_user.id)
             and any(
                 str(admin_states.get(msg.from_user.id, "")).startswith(p)
-                for p in ["waiting_preview_photo_", "waiting_media_"]
+                for p in ["waiting_preview_photo_", "waiting_preview_photo2_", "waiting_media_"]
             )
         )
     )
     def process_model_photo(message):
-        if not is_admin(message.from_user.id):
-            return
-
-        state = admin_states.get(message.from_user.id, "")
+        state   = admin_states.get(message.from_user.id, "")
         file_id = message.photo[-1].file_id
 
-        if state.startswith("waiting_preview_photo_"):
-            model_id = int(state.replace("waiting_preview_photo_", ""))
-
-            set_preview_photo(model_id, file_id)
-            add_model_media(model_id, file_id, 'photo', is_preview=1, position=1)
-
+        if state.startswith("waiting_preview_photo2_"):
+            model_id = int(state.replace("waiting_preview_photo2_", ""))
+            set_preview_photo_2(model_id, file_id)
             admin_states[message.from_user.id] = "waiting_media_" + str(model_id)
-
             bot.send_message(
                 message.chat.id,
-                "✅ Главное фото сохранено!\n\n"
-                "Теперь отправляй остальные фото/видео.\n"
+                "✅ Аватарка 2 сохранена!\n\n"
+                "Теперь отправляй фото/видео для контента.\n"
                 "Первые 3 фото — превью для Fan.\n"
                 "Все остальные — только для Premium.\n\n"
                 "Когда закончишь — напиши /done"
             )
 
+        elif state.startswith("waiting_preview_photo_"):
+            model_id = int(state.replace("waiting_preview_photo_", ""))
+            set_preview_photo(model_id, file_id)
+            add_model_media(model_id, file_id, 'photo', is_preview=1, position=1)
+            admin_states[message.from_user.id] = "waiting_preview_photo2_" + str(model_id)
+            bot.send_message(
+                message.chat.id,
+                "✅ Аватарка 1 сохранена!\n\n"
+                "Теперь отправь аватарку 2 👇\n"
+                "(второе фото которое будет показано в профиле)"
+            )
+
         elif state.startswith("waiting_media_"):
             model_id = int(state.replace("waiting_media_", ""))
-
-            existing = get_all_media(model_id)
-            position = len(existing) + 1
-            # Первые 3 медиафайла (кроме главного) — превью
+            existing  = get_all_media(model_id)
+            position  = len(existing) + 1
             is_preview = 1 if position <= 3 else 0
-
             add_model_media(model_id, file_id, 'photo', is_preview, position)
-
             preview_text = "👁 Fan превью" if is_preview else "🔒 Premium контент"
             bot.send_message(
                 message.chat.id,
@@ -620,19 +641,12 @@ def register_admin_handlers(bot):
         )
     )
     def process_model_video(message):
-        if not is_admin(message.from_user.id):
-            return
-
-        state = admin_states.get(message.from_user.id, "")
+        state    = admin_states.get(message.from_user.id, "")
         model_id = int(state.replace("waiting_media_", ""))
-        file_id = message.video.file_id
-
+        file_id  = message.video.file_id
         existing = get_all_media(model_id)
         position = len(existing) + 1
-
-        # Видео всегда идёт в Premium (is_preview=0)
         add_model_media(model_id, file_id, 'video', is_preview=0, position=position)
-
         bot.send_message(
             message.chat.id,
             "✅ Видео " + str(position) + " добавлено — 🔒 Premium контент\n"
@@ -648,9 +662,9 @@ def register_admin_handlers(bot):
         bot.send_message(
             call.message.chat.id,
             "👩 Отправь данные модели:\n"
-            "Имя | Дата рождения или Возраст | Ник | Описание\n\n"
+            "Имя | Дата рождения или Возраст | Описание\n\n"
             "Пример:\n"
-            "Марина | 15.05.1998 | marina_mol | Нежная 🔥"
+            "Марина | 15.05.1998 | Нежная 🔥"
         )
         admin_states[call.from_user.id] = "waiting_model_data"
 
@@ -660,22 +674,17 @@ def register_admin_handlers(bot):
     def admin_list_models_callback(call):
         if not is_admin(call.from_user.id):
             return
-
         models = get_all_models()
         if not models:
             bot.answer_callback_query(call.id, "Моделей пока нет")
             return
-
         lines = ["📋 Список моделей:\n"]
         for model in models:
-            birth_info = ""
-            if model.get("birth_date"):
-                birth_info = " (ДР: " + model["birth_date"] + ")"
+            birth_info = (" (ДР: " + model["birth_date"] + ")") if model.get("birth_date") else ""
             lines.append(
                 "👩 " + model["name"] + " | " + str(model["age"]) + " лет" + birth_info +
                 " | ID: " + str(model["id"])
             )
-
         bot.send_message(call.message.chat.id, "\n".join(lines))
 
     # ── Callback — статистика ─────────────────
@@ -685,33 +694,40 @@ def register_admin_handlers(bot):
         if not is_admin(call.from_user.id):
             return
 
+        import time as _time
         from database import get_connection
-        conn = get_connection()
+        conn   = get_connection()
         cursor = conn.cursor()
+        now_ts = int(_time.time())
 
         cursor.execute("SELECT COUNT(*) FROM users")
         total_users = cursor.fetchone()[0]
 
         cursor.execute(
             "SELECT COUNT(*) FROM users WHERE subscription_type IS NOT NULL "
-            "AND subscription_expires > strftime('%s', 'now')"
+            "AND subscription_expires > %s", (now_ts,)
         )
         active_subs = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM users WHERE subscription_type = 'fan_30'")
+        cursor.execute(
+            "SELECT COUNT(*) FROM users WHERE subscription_type = 'fan_30' "
+            "AND subscription_expires > %s", (now_ts,)
+        )
         fan_count = cursor.fetchone()[0]
 
-        cursor.execute("SELECT COUNT(*) FROM users WHERE subscription_type = 'premium_90'")
+        cursor.execute(
+            "SELECT COUNT(*) FROM users WHERE subscription_type = 'premium_90' "
+            "AND subscription_expires > %s", (now_ts,)
+        )
         premium_count = cursor.fetchone()[0]
 
         cursor.execute("SELECT COUNT(*) FROM payments WHERE status = 'confirmed'")
         payments_confirmed = cursor.fetchone()[0]
 
         cursor.execute(
-            "SELECT SUM(amount_usd) FROM payments WHERE status = 'confirmed'"
+            "SELECT COALESCE(SUM(amount_usd), 0) FROM payments WHERE status = 'confirmed'"
         )
-        total_usd_row = cursor.fetchone()[0]
-        total_usd = round(total_usd_row, 2) if total_usd_row else 0
+        total_usd = round(cursor.fetchone()[0], 2)
 
         cursor.execute("SELECT COUNT(*) FROM models WHERE is_active = 1")
         models_count = cursor.fetchone()[0]
