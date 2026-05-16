@@ -374,12 +374,12 @@ def register_girls_handlers(bot):
                 pass
 
             if preview_photo2:
-                # Две аватарки — отправляем как альбом, затем текст с клавиатурой
+                # Две аватарки — альбом с описанием на первом фото, затем клавиатура
                 try:
                     bot.send_media_group(
                         call.message.chat.id,
                         [
-                            types.InputMediaPhoto(preview_photo),
+                            types.InputMediaPhoto(preview_photo, caption=text),
                             types.InputMediaPhoto(preview_photo2)
                         ]
                     )
@@ -387,7 +387,7 @@ def register_girls_handlers(bot):
                     print("[GIRLS] Ошибка media_group: " + str(e))
                 bot.send_message(
                     chat_id=call.message.chat.id,
-                    text=text,
+                    text="👇 Выбери действие:",
                     reply_markup=keyboard
                 )
             else:
