@@ -374,22 +374,28 @@ def register_girls_handlers(bot):
                 pass
 
             if preview_photo2:
-                # Две аватарки — альбом с описанием на первом фото, затем клавиатура
+                # Две аватарки: первое фото без подписи, второе с текстом и кнопками
                 try:
-                    bot.send_media_group(
-                        call.message.chat.id,
-                        [
-                            types.InputMediaPhoto(preview_photo, caption=text),
-                            types.InputMediaPhoto(preview_photo2)
-                        ]
+                    bot.send_photo(
+                        chat_id=call.message.chat.id,
+                        photo=preview_photo
                     )
                 except Exception as e:
-                    print("[GIRLS] Ошибка media_group: " + str(e))
-                bot.send_message(
-                    chat_id=call.message.chat.id,
-                    text="👇 Выбери действие:",
-                    reply_markup=keyboard
-                )
+                    print("[GIRLS] Ошибка фото 1: " + str(e))
+                try:
+                    bot.send_photo(
+                        chat_id=call.message.chat.id,
+                        photo=preview_photo2,
+                        caption=text,
+                        reply_markup=keyboard
+                    )
+                except Exception as e:
+                    print("[GIRLS] Ошибка фото 2: " + str(e))
+                    bot.send_message(
+                        chat_id=call.message.chat.id,
+                        text=text,
+                        reply_markup=keyboard
+                    )
             else:
                 # Одна аватарка — фото с подписью и клавиатурой
                 try:
