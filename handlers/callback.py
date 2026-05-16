@@ -597,8 +597,7 @@ def register_callback_handlers(bot):
     @bot.callback_query_handler(func=lambda call: call.data.startswith("ltc_crystal_"))
     def handle_ltc_crystal(call):
         bot.answer_callback_query(call.id, "⏳ Генерируем счёт...")
-        num       = call.data[12:]   # strip "ltc_crystal_" → "50" etc.
-        pack_type = "pack_" + num
+        pack_type = call.data[12:]   # strip "ltc_crystal_" → "pack_50", "pack_test" etc.
         user_id   = call.from_user.id
         register_user(user_id, call.from_user.username or "", call.from_user.full_name or "")
 
@@ -633,9 +632,8 @@ def register_callback_handlers(bot):
     @bot.callback_query_handler(func=lambda call: call.data.startswith("exch_crystal_"))
     def handle_exchange_crystal(call):
         bot.answer_callback_query(call.id)
-        num       = call.data[13:]   # strip "exch_crystal_"
-        pack_type = "pack_" + num
-        plan_key  = "crystal_pack_" + num
+        pack_type = call.data[13:]            # strip "exch_crystal_" → "pack_50", "pack_test" etc.
+        plan_key  = "crystal_" + pack_type    # "crystal_pack_50" etc.
 
         from utils.payments import CRYSTAL_PACKS
         info  = CRYSTAL_PACKS.get(pack_type, CRYSTAL_PACKS["pack_50"])
@@ -664,13 +662,12 @@ def register_callback_handlers(bot):
         user_id = call.from_user.id
 
         if call.data.startswith("mc_crystal_"):
-            card = "Mastercard"
-            num  = call.data[11:]   # strip "mc_crystal_"
+            card      = "Mastercard"
+            pack_type = call.data[11:]   # strip "mc_crystal_" → "pack_50" etc.
         else:
-            card = "Visa"
-            num  = call.data[11:]   # strip "vi_crystal_"
+            card      = "Visa"
+            pack_type = call.data[11:]   # strip "vi_crystal_" → "pack_50" etc.
 
-        pack_type = "pack_" + num
         from utils.payments import CRYSTAL_PACKS
         info  = CRYSTAL_PACKS.get(pack_type, CRYSTAL_PACKS["pack_50"])
         lei   = info["usd"] * LEI_RATE
