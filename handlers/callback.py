@@ -44,6 +44,22 @@ from telebot import types
 # Словарь активных платежей: user_id → invoice
 active_payments = {}
 
+# Блокировка против двойного зачисления
+_activation_lock = threading.Lock()
+
+
+def _get_payment_status(payment_id: str) -> str:
+    """Возвращает статус платежа из БД ('pending' / 'confirmed')."""
+    try:
+        conn   = get_connection()
+        cursor = conn.cursor()
+        cursor.execute("SELECT status FROM payments WHERE payment_id = %s", (payment_id,))
+        row = cursor.fetchone()
+        conn.close()
+        return row[0] if row else "pending"
+    except Exception:
+        return "pending"
+
 
 def _schedule_test_expiry(bot, chat_id: int, user_id: int, minutes: int):
     """Уведомляет пользователя когда тестовая подписка истекает."""
@@ -110,10 +126,10 @@ def safe_edit(bot, call, text: str, reply_markup=None, parse_mode=None):
 # Мониторинг платежа
 # ─────────────────────────────────────────────
 
-def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict):
+def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict, one_shot: bool = False):
     """
     Фоновый поток — проверяет LTC каждые 30 секунд, максимум 60 минут.
-    При подтверждении активирует подписку с учётом minutes (для теста).
+    one_shot=True — одиночная проверка без цикла (вызывается при нажатии «Я оплатил»).
     """
     expected_amount = invoice["amount_ltc"]
     payment_id      = invoice["payment_id"]
@@ -135,7 +151,11 @@ def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict):
             )
 
             if payment_received:
-                confirm_payment(payment_id)
+                with _activation_lock:
+                    if _get_payment_status(payment_id) == "confirmed":
+                        active_payments.pop(user_id, None)
+                        return  # Уже активировано другим потоком
+                    confirm_payment(payment_id)
 
                 if invoice_type == "subscription":
                     sub_type = invoice["sub_type"]
@@ -222,11 +242,18 @@ def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict):
                 print("[MONITOR] Платёж " + payment_id + " подтверждён!")
                 return
 
+            if one_shot:
+                return  # Одиночная проверка — выходим без ожидания
             time.sleep(check_interval)
 
         except Exception as e:
             print("[MONITOR ERROR] " + str(e))
+            if one_shot:
+                return
             time.sleep(check_interval)
+
+    if one_shot:
+        return
 
     # Время вышло
     bot.send_message(
@@ -704,12 +731,25 @@ def register_callback_handlers(bot):
     @bot.callback_query_handler(func=lambda call: call.data == "payment_confirmed")
     def payment_confirmed(call):
         bot.answer_callback_query(call.id, "⏳ Проверяем платёж...", show_alert=True)
+        user_id  = call.from_user.id
+        chat_id  = call.message.chat.id
+        invoice  = active_payments.get(user_id)
+
         safe_edit(
             bot, call,
             "⏳ Проверяем твой платёж...\n\n"
-            "Это может занять до 5 минут.\n"
+            "Это может занять до 2 минут.\n"
             "Уведомим как только подтвердится ✅"
         )
+
+        # Немедленная проверка вне основного цикла — не ждём 30 сек
+        if invoice:
+            threading.Thread(
+                target=monitor_payment,
+                args=(bot, chat_id, user_id, invoice),
+                kwargs={"one_shot": True},
+                daemon=True
+            ).start()
 
     # ── История кристаллов ───────────────────
 
