@@ -55,6 +55,12 @@ SUBSCRIPTION_PRICES: dict = {
 # ─────────────────────────────────────────────
 
 CRYSTAL_PACKS: dict = {
+    "pack_test": {
+        "name":     "Тест $0.1",
+        "usd":      0.1,
+        "crystals": 1,
+        "bonus":    0
+    },
     "pack_50": {
         "name":     "Стартовый",
         "usd":      5,

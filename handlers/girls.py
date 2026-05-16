@@ -120,7 +120,12 @@ def get_girl_profile_keyboard(model_id: int, has_premium: bool, has_fan: bool) -
             )
         )
 
-    # Кнопка Назад — всегда возвращает на первую страницу каталога
+    markup.add(
+        types.InlineKeyboardButton(
+            "💌 Написать модели",
+            callback_data="contact_girl_" + str(model_id)
+        )
+    )
     markup.add(
         types.InlineKeyboardButton("« Назад к каталогу", callback_data="girls")
     )
@@ -597,15 +602,6 @@ def register_girls_handlers(bot):
             bot.answer_callback_query(call.id)
             return
 
-        sub = check_subscription(user_id)
-        if not sub["active"]:
-            bot.answer_callback_query(
-                call.id,
-                "🔒 Для связи с девушками нужна подписка\n\nОформи Fan или Premium 💎",
-                show_alert=True
-            )
-            return
-
         model = get_model(model_id)
         if not model:
             bot.answer_callback_query(call.id)
@@ -613,49 +609,64 @@ def register_girls_handlers(bot):
 
         bot.answer_callback_query(
             call.id,
-            "💌 Запрос принят!\n\n"
-            "Администрация Miss Moldova свяжется с тобой в ближайшее время.\n\n"
-            "Ожидай сообщения ❤️",
+            "💌 Ваш запрос принят!\n\n"
+            "Администрация Miss Moldova свяжется с вами в ближайшее время.\n\n"
+            "Ожидайте сообщения ❤️",
             show_alert=True
         )
 
-        username = call.from_user.username
+        sub      = check_subscription(user_id)
+        username  = call.from_user.username
         full_name = call.from_user.full_name or "Пользователь"
-        user_ref = "@" + username if username else full_name
-        sub_type = sub.get("type") or ""
-        sub_name = "👑 Premium" if "premium" in sub_type else "🌸 Fan"
+        user_ref  = "@" + username if username else full_name
+        sub_type  = sub.get("type") or ""
+        if sub["active"] and "premium" in sub_type:
+            sub_name = "👑 Premium"
+        elif sub["active"]:
+            sub_name = "🌸 Fan"
+        else:
+            sub_name = "❌ Нет подписки"
 
-        from config import ADMIN_IDS
+        notify_text = (
+            "💌 Новый запрос — Написать модели\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "👤 Пользователь: " + user_ref + "\n"
+            "🆔 ID: " + str(user_id) + "\n"
+            "💳 Подписка: " + sub_name + "\n\n"
+            "💃 Модель: " + model["name"] + "\n\n"
+            "━━━━━━━━━━━━━━━"
+        )
+
         reply_keyboard = types.InlineKeyboardMarkup()
         reply_keyboard.add(
             types.InlineKeyboardButton(
-                "💬 Написать пользователю",
+                "💬 Ответить пользователю",
                 callback_data="admin_reply_" + str(user_id)
             )
         )
 
+        from config import ADMIN_IDS, CONTACT_MANAGER_ID
+
+        # Уведомление всем админам
         for admin_id in ADMIN_IDS:
             try:
-                bot.send_message(
-                    admin_id,
-                    "💌 Новый запрос на знакомство!\n"
-                    "━━━━━━━━━━━━━━━\n\n"
-                    "👤 Пользователь: " + user_ref + "\n"
-                    "🆔 ID: " + str(user_id) + "\n"
-                    "💳 Подписка: " + sub_name + "\n\n"
-                    "💕 Интересует: " + model["name"] + "\n\n"
-                    "━━━━━━━━━━━━━━━",
-                    reply_markup=reply_keyboard
-                )
+                bot.send_message(admin_id, notify_text, reply_markup=reply_keyboard)
             except Exception as e:
-                print("[CONTACT] Ошибка уведомления: " + str(e))
+                print("[CONTACT] Ошибка уведомления admin " + str(admin_id) + ": " + str(e))
+
+        # Личное уведомление @Viktoria11051
+        if CONTACT_MANAGER_ID and CONTACT_MANAGER_ID not in ADMIN_IDS:
+            try:
+                bot.send_message(CONTACT_MANAGER_ID, notify_text, reply_markup=reply_keyboard)
+            except Exception as e:
+                print("[CONTACT] Ошибка уведомления менеджера: " + str(e))
 
         notify_channel(
             bot,
-            "💌 Запрос на знакомство\n"
+            "💌 Запрос — Написать модели\n"
             "━━━━━━━━━━━━━━━\n"
             "👤 " + user_ref + "\n"
             "🆔 ID: " + str(user_id) + "\n"
-            "💳 Подписка: " + sub_name + "\n"
-            "💕 Интересует: " + model["name"]
+            "💳 " + sub_name + "\n"
+            "💃 Модель: " + model["name"]
         )

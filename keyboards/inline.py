@@ -43,6 +43,10 @@ def get_crystal_packs_menu() -> types.InlineKeyboardMarkup:
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton(
+            "🧪 1 кристалл — $0.1 (тест)",
+            callback_data="crystal_pack_test"
+        ),
+        types.InlineKeyboardButton(
             "💎 50 кристаллов — $5",
             callback_data="crystal_pack_50"
         ),
