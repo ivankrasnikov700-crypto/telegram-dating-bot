@@ -77,6 +77,7 @@ def init_models_db():
 
     conn.commit()
     _migrate_add_birth_date(cursor, conn)
+    _migrate_add_preview_photo_2(cursor, conn)
     conn.close()
     print("[DB] Таблицы моделей инициализированы")
 
@@ -89,6 +90,17 @@ def _migrate_add_birth_date(cursor, conn):
         conn.commit()
     except Exception as e:
         print("[DB] Миграция birth_date: " + str(e))
+
+
+def _migrate_add_preview_photo_2(cursor, conn):
+    try:
+        cursor.execute(
+            "ALTER TABLE models ADD COLUMN IF NOT EXISTS preview_photo_2 TEXT DEFAULT NULL"
+        )
+        conn.commit()
+        print("[DB] Миграция: preview_photo_2 OK")
+    except Exception as e:
+        print("[DB] Миграция preview_photo_2: " + str(e))
 
 
 def add_model(name: str, age_or_birthdate, username: str, description: str) -> int:
@@ -231,9 +243,15 @@ def get_all_media(model_id: int) -> list:
 def set_preview_photo(model_id: int, file_id: str):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE models SET preview_photo = %s WHERE id = %s
-    ''', (file_id, model_id))
+    cursor.execute('UPDATE models SET preview_photo = %s WHERE id = %s', (file_id, model_id))
+    conn.commit()
+    conn.close()
+
+
+def set_preview_photo_2(model_id: int, file_id: str):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('UPDATE models SET preview_photo_2 = %s WHERE id = %s', (file_id, model_id))
     conn.commit()
     conn.close()
 

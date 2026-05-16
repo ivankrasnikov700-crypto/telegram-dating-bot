@@ -16,6 +16,7 @@ from database.models import (
     get_model,
     add_model_media,
     set_preview_photo,
+    set_preview_photo_2,
     deactivate_model,
     get_preview_media,
     get_all_media,
@@ -372,7 +373,23 @@ def register_admin_handlers(bot):
             bot.send_message(message.chat.id, "❌ Модель не найдена")
             return
         admin_states[message.from_user.id] = "waiting_preview_photo_" + str(model_id)
-        bot.send_message(message.chat.id, "📸 Отправь новое главное фото для " + model["name"] + ":")
+        bot.send_message(message.chat.id, "📸 Отправь аватарку 1 для " + model["name"] + ":")
+
+    @bot.message_handler(commands=['setphoto2'])
+    def set_photo2_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Укажи ID: /setphoto2 3")
+            return
+        model_id = int(parts[1])
+        model    = get_model(model_id)
+        if not model:
+            bot.send_message(message.chat.id, "❌ Модель не найдена")
+            return
+        admin_states[message.from_user.id] = "waiting_preview_photo2_" + str(model_id)
+        bot.send_message(message.chat.id, "📸 Отправь аватарку 2 для " + model["name"] + ":")
 
     # ── Добавить медиа к модели ───────────────
 
@@ -513,7 +530,7 @@ def register_admin_handlers(bot):
                 "👩 Имя: " + name + "\n"
                 "🎂 Возраст: " + str(age_show) + " лет\n"
                 "🆔 ID модели: " + str(model_id) + "\n\n"
-                "Теперь отправь главное фото профиля (превью):"
+                "Теперь отправь аватарку 1 (главное фото профиля):"
             )
 
             notify_channel(
@@ -568,7 +585,7 @@ def register_admin_handlers(bot):
             is_admin(msg.from_user.id)
             and any(
                 str(admin_states.get(msg.from_user.id, "")).startswith(p)
-                for p in ["waiting_preview_photo_", "waiting_media_"]
+                for p in ["waiting_preview_photo_", "waiting_preview_photo2_", "waiting_media_"]
             )
         )
     )
@@ -576,18 +593,29 @@ def register_admin_handlers(bot):
         state   = admin_states.get(message.from_user.id, "")
         file_id = message.photo[-1].file_id
 
-        if state.startswith("waiting_preview_photo_"):
-            model_id = int(state.replace("waiting_preview_photo_", ""))
-            set_preview_photo(model_id, file_id)
-            add_model_media(model_id, file_id, 'photo', is_preview=1, position=1)
+        if state.startswith("waiting_preview_photo2_"):
+            model_id = int(state.replace("waiting_preview_photo2_", ""))
+            set_preview_photo_2(model_id, file_id)
             admin_states[message.from_user.id] = "waiting_media_" + str(model_id)
             bot.send_message(
                 message.chat.id,
-                "✅ Главное фото сохранено!\n\n"
-                "Теперь отправляй остальные фото/видео.\n"
+                "✅ Аватарка 2 сохранена!\n\n"
+                "Теперь отправляй фото/видео для контента.\n"
                 "Первые 3 фото — превью для Fan.\n"
                 "Все остальные — только для Premium.\n\n"
                 "Когда закончишь — напиши /done"
+            )
+
+        elif state.startswith("waiting_preview_photo_"):
+            model_id = int(state.replace("waiting_preview_photo_", ""))
+            set_preview_photo(model_id, file_id)
+            add_model_media(model_id, file_id, 'photo', is_preview=1, position=1)
+            admin_states[message.from_user.id] = "waiting_preview_photo2_" + str(model_id)
+            bot.send_message(
+                message.chat.id,
+                "✅ Аватарка 1 сохранена!\n\n"
+                "Теперь отправь аватарку 2 👇\n"
+                "(второе фото которое будет показано в профиле)"
             )
 
         elif state.startswith("waiting_media_"):
