@@ -9,6 +9,8 @@ from database import init_db
 from database.models import init_models_db
 from database.reviews import init_reviews_db
 from database.settings import init_settings_db
+from database.bonus import init_bonus_db
+from database.schedule import init_schedule_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -47,6 +49,8 @@ from handlers.callback import register_callback_handlers
 from handlers.admin import register_admin_handlers
 from handlers.girls import register_girls_handlers
 from handlers.reviews import register_reviews_handlers
+from handlers.bonus import register_bonus_handlers
+from handlers.vip import register_vip_handlers
 from utils.scheduler import start_scheduler, add_scheduler_columns
 
 
@@ -55,6 +59,8 @@ def main():
     init_models_db()
     init_reviews_db()
     init_settings_db()
+    init_bonus_db()
+    init_schedule_db()
     add_scheduler_columns()
 
     register_start_handlers(bot)
@@ -62,6 +68,8 @@ def main():
     register_admin_handlers(bot)
     register_girls_handlers(bot)
     register_reviews_handlers(bot)
+    register_bonus_handlers(bot)
+    register_vip_handlers(bot)
 
     start_scheduler(bot)
 

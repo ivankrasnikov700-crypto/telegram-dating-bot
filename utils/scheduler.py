@@ -2,6 +2,7 @@
 # Фоновый планировщик:
 #   1. Каждые 6 часов — уведомления об истекающих подписках
 #   2. Каждый день в 10:00 Кишинёв (UTC+3) — статистика в admin-канал
+#   3. Каждые 2 минуты — анонсы сессий моделей в VIP-канал
 
 import threading
 import time
@@ -16,7 +17,7 @@ _UTC_OFFSET_HOURS = 3
 
 
 def start_scheduler(bot):
-    """Запускает два фоновых треда: подписки и ежедневная статистика."""
+    """Запускает три фоновых треда: подписки, статистика, анонсы сессий."""
     threading.Thread(
         target=_subscription_loop,
         args=(bot,),
@@ -29,6 +30,13 @@ def start_scheduler(bot):
         args=(bot,),
         daemon=True,
         name="DailyStats"
+    ).start()
+
+    threading.Thread(
+        target=_session_announcement_loop,
+        args=(bot,),
+        daemon=True,
+        name="SessionAnnouncer"
     ).start()
 
     print("[SCHEDULER] Запущен. Статистика каждый день в "
@@ -300,3 +308,53 @@ def reset_notification_flag(user_id: int):
         print("[SCHEDULER] Ошибка reset_flag: " + str(e))
     finally:
         conn.close()
+
+
+# ─────────────────────────────────────────────
+# Анонсы VIP-сессий (каждые 2 минуты)
+# ─────────────────────────────────────────────
+
+def _session_announcement_loop(bot):
+    """Проверяет расписание каждые 2 минуты и публикует анонсы за ~1 час."""
+    while True:
+        try:
+            _check_and_announce_sessions(bot)
+        except Exception as e:
+            print("[SESSION ANNOUNCER ERROR] " + str(e))
+        time.sleep(2 * 60)
+
+
+def _check_and_announce_sessions(bot):
+    from config import VIP_CHANNEL_ID
+    from database.schedule import get_upcoming_sessions, mark_announced
+
+    if not VIP_CHANNEL_ID:
+        return
+
+    sessions = get_upcoming_sessions(after_minutes=55, within_minutes=65)
+    if not sessions:
+        return
+
+    for session in sessions:
+        model_name = session["model_name"]
+        minutes    = session["minutes_until"]
+        sess_dt    = session["session_datetime"]
+        time_str   = sess_dt.strftime("%H:%M")
+
+        text = (
+            "👑 VIP Анонс Miss Moldova\n"
+            "━━━━━━━━━━━━━━━\n\n"
+            "💃 Через " + str(minutes) + " минут в сети:\n"
+            "   " + model_name + "\n\n"
+            "⏰ Начало сессии в " + time_str + "\n"
+            "💬 Задавай вопросы — она ответит!\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "🔔 Будь онлайн!"
+        )
+
+        try:
+            bot.send_message(VIP_CHANNEL_ID, text)
+            mark_announced(session["id"])
+            print("[SESSION] Анонс отправлен: " + model_name + " в " + time_str)
+        except Exception as e:
+            print("[SESSION] Ошибка отправки анонса: " + str(e))

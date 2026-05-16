@@ -8,6 +8,9 @@ from telebot import types
 from config import ADMIN_IDS, LTC_ADDRESS
 from database.reviews import add_review, get_reviews, delete_review
 from database.settings import get_setting, set_setting
+from database.schedule import (
+    add_schedule, get_all_schedules, delete_schedule, format_schedule_list
+)
 from utils.notify import notify_channel
 from database.models import (
     add_model,
@@ -153,6 +156,92 @@ def register_admin_handlers(bot):
             "📡 Медиа канал ID: " + str(MEDIA_CHANNEL_ID) + "\n"
             "🔒 Админ канал ID: " + str(ADMIN_CHANNEL_ID)
         )
+
+    # ── VIP: ссылка-приглашение ───────────────
+
+    @bot.message_handler(commands=['setviplink'])
+    def set_vip_link_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2 or not parts[1].startswith("http"):
+            current = get_setting("vip_invite_link") or "не задана"
+            bot.send_message(
+                message.chat.id,
+                "🔗 VIP ссылка-приглашение\n\n"
+                "Текущая: " + current + "\n\n"
+                "Укажи ссылку:\n"
+                "/setviplink https://t.me/+xxxxxx"
+            )
+            return
+        set_setting("vip_invite_link", parts[1].strip())
+        bot.send_message(message.chat.id, "✅ VIP ссылка сохранена:\n" + parts[1].strip())
+
+    # ── Расписание VIP-сессий ─────────────────
+
+    @bot.message_handler(commands=['schedule'])
+    def schedule_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split(maxsplit=1)
+        if len(parts) < 2:
+            bot.send_message(
+                message.chat.id,
+                "📅 Добавить расписание сессии:\n\n"
+                "/schedule Имя ДНИ ВРЕМЯ\n\n"
+                "Пример:\n"
+                "/schedule Анастасия ПН,СР,ПТ 20:00\n"
+                "/schedule Марина СБ,ВС 19:00\n\n"
+                "Дни: ПН ВТ СР ЧТ ПТ СБ ВС"
+            )
+            return
+        tokens = parts[1].rsplit(maxsplit=2)
+        if len(tokens) < 3:
+            bot.send_message(message.chat.id, "❌ Формат: /schedule Имя ДНИ ВРЕМЯ\nПример: /schedule Анастасия ПН,СР 20:00")
+            return
+        model_name   = tokens[0].strip()
+        days         = tokens[1].strip()
+        session_time = tokens[2].strip()
+        if ":" not in session_time:
+            bot.send_message(message.chat.id, "❌ Время должно быть в формате ЧЧ:ММ (например 20:00)")
+            return
+        schedule_id = add_schedule(model_name, days, session_time)
+        bot.send_message(
+            message.chat.id,
+            "✅ Расписание добавлено!\n\n"
+            "💃 " + model_name + "\n"
+            "📆 " + days.upper() + "  ⏰ " + session_time + "\n"
+            "🆔 ID: " + str(schedule_id) + "\n\n"
+            "Бот пришлёт анонс в VIP-канал за 1 час до сессии."
+        )
+
+    @bot.message_handler(commands=['schedules'])
+    def schedules_list_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        schedules = get_all_schedules()
+        if not schedules:
+            bot.send_message(message.chat.id, "📅 Расписаний пока нет\n\nДобавь: /schedule Имя ДНИ ВРЕМЯ")
+            return
+        lines = ["📅 Расписание сессий:\n"]
+        for s in schedules:
+            lines.append(
+                "ID " + str(s["id"]) + " | 💃 " + s["model_name"] +
+                " | " + s["days"] + " " + s["session_time"]
+            )
+        lines.append("\nУдалить: /delschedule ID")
+        bot.send_message(message.chat.id, "\n".join(lines))
+
+    @bot.message_handler(commands=['delschedule'])
+    def del_schedule_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Укажи ID: /delschedule 3")
+            return
+        delete_schedule(int(parts[1]))
+        bot.send_message(message.chat.id, "✅ Расписание ID " + parts[1] + " удалено")
 
     # ── Активация подписки вручную ────────────
 
