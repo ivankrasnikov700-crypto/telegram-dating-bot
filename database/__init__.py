@@ -149,6 +149,15 @@ def spend_crystals(user_id: int, amount: int, reason: str) -> bool:
     return True
 
 
+def get_all_user_ids() -> list:
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("SELECT user_id FROM users")
+    rows = cursor.fetchall()
+    conn.close()
+    return [row[0] for row in rows]
+
+
 def check_subscription(user_id: int) -> dict:
     user = get_user(user_id)
 

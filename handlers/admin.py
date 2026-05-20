@@ -6,6 +6,7 @@ import time
 
 from telebot import types
 from config import ADMIN_IDS, LTC_ADDRESS
+from database import get_all_user_ids
 from database.reviews import add_review, get_reviews, delete_review
 from database.settings import get_setting, set_setting
 from database.schedule import (
@@ -531,6 +532,90 @@ def register_admin_handlers(bot):
             "👁 Превью Fan: " + str(len(preview_media)) + " фото\n"
             "🔒 Premium: " + str(len(all_media) - len(preview_media)) + " файлов"
         )
+
+    # ── Рассылка всем пользователям ─────────
+
+    @bot.message_handler(commands=['broadcast'])
+    def broadcast_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        admin_states[message.from_user.id] = "waiting_broadcast"
+        bot.send_message(
+            message.chat.id,
+            "📢 Рассылка\n\n"
+            "Отправь сообщение для рассылки:\n"
+            "• Просто текст\n"
+            "• Фото с подписью\n\n"
+            "/cancel — отменить"
+        )
+
+    @bot.message_handler(
+        content_types=['text'],
+        func=lambda msg: (
+            is_admin(msg.from_user.id)
+            and admin_states.get(msg.from_user.id) == "waiting_broadcast"
+            and not msg.text.startswith('/')
+        )
+    )
+    def process_broadcast_text(message):
+        if admin_states.get(message.from_user.id) != "waiting_broadcast":
+            return
+        del admin_states[message.from_user.id]
+        user_ids = get_all_user_ids()
+        text = message.text
+        bot.send_message(message.chat.id, "⏳ Рассылка начата... 0/" + str(len(user_ids)))
+
+        def _send():
+            ok = 0
+            fail = 0
+            for uid in user_ids:
+                try:
+                    bot.send_message(uid, text)
+                    ok += 1
+                    time.sleep(0.05)
+                except Exception:
+                    fail += 1
+            bot.send_message(
+                message.chat.id,
+                "✅ Рассылка завершена!\n\n"
+                "✔️ Доставлено: " + str(ok) + "\n"
+                "❌ Ошибок: " + str(fail)
+            )
+        threading.Thread(target=_send, daemon=True).start()
+
+    @bot.message_handler(
+        content_types=['photo'],
+        func=lambda msg: (
+            is_admin(msg.from_user.id)
+            and admin_states.get(msg.from_user.id) == "waiting_broadcast"
+        )
+    )
+    def process_broadcast_photo(message):
+        if admin_states.get(message.from_user.id) != "waiting_broadcast":
+            return
+        del admin_states[message.from_user.id]
+        user_ids = get_all_user_ids()
+        file_id  = message.photo[-1].file_id
+        caption  = message.caption or ""
+        bot.send_message(message.chat.id, "⏳ Рассылка начата... 0/" + str(len(user_ids)))
+
+        def _send():
+            ok = 0
+            fail = 0
+            for uid in user_ids:
+                try:
+                    bot.send_photo(uid, file_id, caption=caption)
+                    ok += 1
+                    time.sleep(0.05)
+                except Exception:
+                    fail += 1
+            bot.send_message(
+                message.chat.id,
+                "✅ Рассылка завершена!\n\n"
+                "✔️ Доставлено: " + str(ok) + "\n"
+                "❌ Ошибок: " + str(fail)
+            )
+        threading.Thread(target=_send, daemon=True).start()
 
     # ── Отмена текущей операции ──────────────
 
