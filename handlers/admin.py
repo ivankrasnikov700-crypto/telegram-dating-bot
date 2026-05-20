@@ -158,6 +158,50 @@ def register_admin_handlers(bot):
             "🔒 Админ канал ID: " + str(ADMIN_CHANNEL_ID)
         )
 
+    # ── Канал уведомлений ────────────────────
+
+    @bot.message_handler(commands=['setchannel'])
+    def set_channel_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2:
+            from utils.notify import get_channel_id
+            current = get_channel_id()
+            bot.send_message(
+                message.chat.id,
+                "📡 Канал уведомлений\n\n"
+                "Текущий ID: " + str(current or "не задан") + "\n\n"
+                "Укажи ID канала:\n"
+                "/setchannel -1001234567890\n\n"
+                "Бот должен быть администратором канала!"
+            )
+            return
+        channel_id = parts[1].strip()
+        if not channel_id.lstrip('-').isdigit():
+            bot.send_message(message.chat.id, "❌ ID должен быть числом, например: -1001234567890")
+            return
+        from database.settings import set_setting
+        set_setting("admin_channel_id", channel_id)
+        try:
+            bot.send_message(int(channel_id), "✅ Канал уведомлений подключён к Miss Moldova!")
+            bot.send_message(message.chat.id, "✅ Канал сохранён: " + channel_id + "\nТестовое сообщение отправлено.")
+        except Exception as e:
+            bot.send_message(message.chat.id, "⚠️ ID сохранён, но тест не прошёл: " + str(e) + "\nПроверь, что бот — администратор канала.")
+
+    @bot.message_handler(commands=['testnotify'])
+    def test_notify_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        from utils.notify import notify_channel, get_channel_id
+        channel_id = get_channel_id()
+        bot.send_message(message.chat.id, "📡 Канал: " + str(channel_id or "не задан"))
+        if not channel_id:
+            bot.send_message(message.chat.id, "❌ Канал не задан. Используй /setchannel <id>")
+            return
+        notify_channel(bot, "🔔 Тест уведомлений Miss Moldova — работает!")
+        bot.send_message(message.chat.id, "✅ Отправлено в канал " + str(channel_id))
+
     # ── VIP: ссылка-приглашение ───────────────
 
     @bot.message_handler(commands=['setviplink'])
