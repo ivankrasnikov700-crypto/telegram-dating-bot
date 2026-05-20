@@ -6,6 +6,7 @@
 # 3. Возраст берётся из _enrich_model() → calculate_age() динамически
 
 from telebot import types
+import time
 from database import (
     register_user,
     check_subscription
@@ -502,6 +503,7 @@ def register_girls_handlers(bot):
                     )
             except Exception as e:
                 print("[GIRLS] Ошибка превью: " + str(e))
+            time.sleep(0.3)
 
         bot.send_message(
             chat_id=call.message.chat.id,
@@ -576,6 +578,7 @@ def register_girls_handlers(bot):
                     )
             except Exception as e:
                 print("[GIRLS] Ошибка медиа #" + str(i) + ": " + str(e))
+            time.sleep(0.3)
 
         bot.send_message(
             chat_id=call.message.chat.id,
