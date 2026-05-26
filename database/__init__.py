@@ -158,6 +158,16 @@ def get_all_user_ids() -> list:
     return [row[0] for row in rows]
 
 
+def get_user_by_username(username: str) -> dict | None:
+    username = username.lstrip("@").lower()
+    conn = get_connection()
+    cursor = _cur(conn)
+    cursor.execute("SELECT * FROM users WHERE LOWER(username) = %s", (username,))
+    row = cursor.fetchone()
+    conn.close()
+    return dict(row) if row else None
+
+
 def ban_user(user_id: int):
     conn = get_connection()
     cursor = conn.cursor()

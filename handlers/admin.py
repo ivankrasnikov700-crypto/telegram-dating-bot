@@ -6,7 +6,7 @@ import time
 
 from telebot import types
 from config import ADMIN_IDS, LTC_ADDRESS
-from database import get_all_user_ids, ban_user, unban_user, is_banned
+from database import get_all_user_ids, ban_user, unban_user, is_banned, get_user_by_username
 from database.reviews import add_review, get_reviews, delete_review
 from database.settings import get_setting, set_setting
 from database.schedule import (
@@ -584,19 +584,37 @@ def register_admin_handlers(bot):
         if not is_admin(message.from_user.id):
             return
         parts = message.text.split()
-        if len(parts) < 2 or not parts[1].isdigit():
+        if len(parts) < 2:
             bot.send_message(message.chat.id,
                 "🚫 Заблокировать пользователя:\n\n"
-                "/ban USER_ID\n\n"
-                "Пример: /ban 123456789")
+                "/ban USER_ID\n"
+                "/ban @username\n\n"
+                "Примеры:\n"
+                "/ban 123456789\n"
+                "/ban @ivan_petrov")
             return
-        target_id = int(parts[1])
+
+        arg = parts[1]
+        if arg.startswith("@") or (not arg.isdigit()):
+            user = get_user_by_username(arg)
+            if not user:
+                bot.send_message(message.chat.id,
+                    "❌ Пользователь @" + arg.lstrip("@") + " не найден в боте.\n\n"
+                    "Он должен был хотя бы раз запустить бота.")
+                return
+            target_id = user["user_id"]
+            display = "@" + (user.get("username") or str(target_id))
+        else:
+            target_id = int(arg)
+            display = "ID " + str(target_id)
+
         if target_id == message.from_user.id:
             bot.send_message(message.chat.id, "❌ Нельзя забанить себя")
             return
+
         ban_user(target_id)
         bot.send_message(message.chat.id,
-            "🚫 Пользователь " + str(target_id) + " заблокирован.\n"
+            "🚫 " + display + " заблокирован.\n"
             "Разблокировать: /unban " + str(target_id))
         try:
             bot.send_message(target_id,
@@ -606,7 +624,7 @@ def register_admin_handlers(bot):
             pass
         notify_channel(bot,
             "🚫 Пользователь заблокирован\n"
-            "👤 ID: " + str(target_id) + "\n"
+            "👤 " + display + " (ID: " + str(target_id) + ")\n"
             "👮 Админ: " + str(message.from_user.id))
 
     @bot.message_handler(commands=['unban'])
@@ -614,13 +632,27 @@ def register_admin_handlers(bot):
         if not is_admin(message.from_user.id):
             return
         parts = message.text.split()
-        if len(parts) < 2 or not parts[1].isdigit():
-            bot.send_message(message.chat.id, "✅ Разблокировать: /unban USER_ID")
+        if len(parts) < 2:
+            bot.send_message(message.chat.id,
+                "✅ Разблокировать: /unban USER_ID или /unban @username")
             return
-        target_id = int(parts[1])
+
+        arg = parts[1]
+        if arg.startswith("@") or (not arg.isdigit()):
+            user = get_user_by_username(arg)
+            if not user:
+                bot.send_message(message.chat.id,
+                    "❌ Пользователь @" + arg.lstrip("@") + " не найден.")
+                return
+            target_id = user["user_id"]
+            display = "@" + (user.get("username") or str(target_id))
+        else:
+            target_id = int(arg)
+            display = "ID " + str(target_id)
+
         unban_user(target_id)
         bot.send_message(message.chat.id,
-            "✅ Пользователь " + str(target_id) + " разблокирован.")
+            "✅ " + display + " разблокирован.")
         try:
             bot.send_message(target_id,
                 "✅ Ваш аккаунт разблокирован. Добро пожаловать обратно!")
