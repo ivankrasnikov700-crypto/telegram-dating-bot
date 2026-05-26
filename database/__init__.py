@@ -158,6 +158,30 @@ def get_all_user_ids() -> list:
     return [row[0] for row in rows]
 
 
+def ban_user(user_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned INTEGER DEFAULT 0")
+    cursor.execute("UPDATE users SET is_banned = 1 WHERE user_id = %s", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def unban_user(user_id: int):
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("UPDATE users SET is_banned = 0 WHERE user_id = %s", (user_id,))
+    conn.commit()
+    conn.close()
+
+
+def is_banned(user_id: int) -> bool:
+    user = get_user(user_id)
+    if not user:
+        return False
+    return bool(user.get("is_banned", 0))
+
+
 def check_subscription(user_id: int) -> dict:
     user = get_user(user_id)
 

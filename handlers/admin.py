@@ -6,7 +6,7 @@ import time
 
 from telebot import types
 from config import ADMIN_IDS, LTC_ADDRESS
-from database import get_all_user_ids
+from database import get_all_user_ids, ban_user, unban_user, is_banned
 from database.reviews import add_review, get_reviews, delete_review
 from database.settings import get_setting, set_setting
 from database.schedule import (
@@ -576,6 +576,56 @@ def register_admin_handlers(bot):
             "👁 Превью Fan: " + str(len(preview_media)) + " фото\n"
             "🔒 Premium: " + str(len(all_media) - len(preview_media)) + " файлов"
         )
+
+    # ── Бан / разбан пользователей ──────────
+
+    @bot.message_handler(commands=['ban'])
+    def ban_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id,
+                "🚫 Заблокировать пользователя:\n\n"
+                "/ban USER_ID\n\n"
+                "Пример: /ban 123456789")
+            return
+        target_id = int(parts[1])
+        if target_id == message.from_user.id:
+            bot.send_message(message.chat.id, "❌ Нельзя забанить себя")
+            return
+        ban_user(target_id)
+        bot.send_message(message.chat.id,
+            "🚫 Пользователь " + str(target_id) + " заблокирован.\n"
+            "Разблокировать: /unban " + str(target_id))
+        try:
+            bot.send_message(target_id,
+                "🚫 Ваш аккаунт заблокирован.\n"
+                "По вопросам обращайтесь к администратору.")
+        except Exception:
+            pass
+        notify_channel(bot,
+            "🚫 Пользователь заблокирован\n"
+            "👤 ID: " + str(target_id) + "\n"
+            "👮 Админ: " + str(message.from_user.id))
+
+    @bot.message_handler(commands=['unban'])
+    def unban_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "✅ Разблокировать: /unban USER_ID")
+            return
+        target_id = int(parts[1])
+        unban_user(target_id)
+        bot.send_message(message.chat.id,
+            "✅ Пользователь " + str(target_id) + " разблокирован.")
+        try:
+            bot.send_message(target_id,
+                "✅ Ваш аккаунт разблокирован. Добро пожаловать обратно!")
+        except Exception:
+            pass
 
     # ── Рассылка всем пользователям ─────────
 

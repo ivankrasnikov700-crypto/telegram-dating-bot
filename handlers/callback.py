@@ -35,7 +35,8 @@ from database import (
     save_payment,
     confirm_payment,
     get_days_since_registration,
-    get_connection
+    get_connection,
+    is_banned
 )
 from config import LTC_ADDRESS, ADMIN_IDS
 from utils.notify import notify_channel
@@ -271,6 +272,12 @@ def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict, one_shot: bo
 # ─────────────────────────────────────────────
 
 def register_callback_handlers(bot):
+
+    # ── Проверка бана (первый обработчик) ────
+
+    @bot.callback_query_handler(func=lambda call: is_banned(call.from_user.id))
+    def banned_user_callback(call):
+        bot.answer_callback_query(call.id, "🚫 Ваш аккаунт заблокирован.", show_alert=True)
 
     # ── Назад в главное меню ─────────────────
 

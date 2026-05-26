@@ -2,7 +2,7 @@
 # Обработчик команды /start — приветственное сообщение с фото
 
 from keyboards.inline import get_main_menu
-from database import register_user
+from database import register_user, is_banned
 from database.settings import get_setting
 from utils.notify import notify_channel
 
@@ -35,6 +35,11 @@ def register_start_handlers(bot):
         user_id   = message.from_user.id
         username  = message.from_user.username or ""
         full_name = message.from_user.full_name or ""
+
+        if is_banned(user_id):
+            bot.send_message(user_id, "🚫 Ваш аккаунт заблокирован.")
+            return
+
         register_user(user_id, username, full_name)
 
         user_ref = ("@" + username) if username else full_name
