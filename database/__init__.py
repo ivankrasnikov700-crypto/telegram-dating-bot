@@ -1,5 +1,6 @@
 import psycopg2
 import psycopg2.extras
+import json
 import time
 from config import DATABASE_URL
 
@@ -58,6 +59,21 @@ def init_db():
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         )
     ''')
+
+    # Pending LTC payments — survives bot restarts
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS pending_payments (
+            user_id BIGINT PRIMARY KEY,
+            chat_id BIGINT NOT NULL,
+            invoice_json TEXT NOT NULL,
+            created_at BIGINT NOT NULL
+        )
+    ''')
+
+    # Ensure is_banned column exists (idempotent)
+    cursor.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned INTEGER DEFAULT 0"
+    )
 
     conn.commit()
     conn.close()
@@ -130,16 +146,17 @@ def add_crystals(user_id: int, amount: int, reason: str):
 
 
 def spend_crystals(user_id: int, amount: int, reason: str) -> bool:
-    user = get_user(user_id)
-    if not user or user["crystals"] < amount:
-        return False
-
     conn = get_connection()
     cursor = conn.cursor()
+    # Atomic: deduct only if balance is sufficient — no race condition
     cursor.execute('''
         UPDATE users SET crystals = crystals - %s
-        WHERE user_id = %s
-    ''', (amount, user_id))
+        WHERE user_id = %s AND crystals >= %s
+    ''', (amount, user_id, amount))
+    if cursor.rowcount == 0:
+        conn.rollback()
+        conn.close()
+        return False
     cursor.execute('''
         INSERT INTO crystal_transactions (user_id, amount, reason, created_at)
         VALUES (%s, %s, %s, %s)
@@ -171,7 +188,6 @@ def get_user_by_username(username: str) -> dict | None:
 def ban_user(user_id: int):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned INTEGER DEFAULT 0")
     cursor.execute("UPDATE users SET is_banned = 1 WHERE user_id = %s", (user_id,))
     conn.commit()
     conn.close()
@@ -266,3 +282,59 @@ def get_days_since_registration(user_id: int) -> int:
         return 0
     created_at = user.get("created_at") or int(time.time())
     return (int(time.time()) - int(created_at)) // 86400
+
+
+# ─────────────────────────────────────────────
+# Pending payments — persist across restarts
+# ─────────────────────────────────────────────
+
+def save_pending_payment(user_id: int, chat_id: int, invoice: dict):
+    """Saves invoice to DB so monitoring can resume after bot restart."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        INSERT INTO pending_payments (user_id, chat_id, invoice_json, created_at)
+        VALUES (%s, %s, %s, %s)
+        ON CONFLICT (user_id) DO UPDATE
+            SET chat_id = EXCLUDED.chat_id,
+                invoice_json = EXCLUDED.invoice_json,
+                created_at = EXCLUDED.created_at
+    ''', (user_id, chat_id, json.dumps(invoice), int(time.time())))
+    conn.commit()
+    conn.close()
+
+
+def load_all_pending_payments() -> list:
+    """Returns all pending payments that haven't expired yet."""
+    now = int(time.time())
+    conn = get_connection()
+    cursor = _cur(conn)
+    cursor.execute(
+        "SELECT user_id, chat_id, invoice_json FROM pending_payments WHERE created_at > %s",
+        (now - 3600,)
+    )
+    rows = cursor.fetchall()
+    conn.close()
+    result = []
+    for row in rows:
+        try:
+            invoice = json.loads(row["invoice_json"])
+            # Skip if invoice already expired
+            if invoice.get("expires_at", 0) > now:
+                result.append({
+                    "user_id": row["user_id"],
+                    "chat_id": row["chat_id"],
+                    "invoice": invoice,
+                })
+        except Exception:
+            pass
+    return result
+
+
+def delete_pending_payment(user_id: int):
+    """Removes a pending payment after it's confirmed or expired."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("DELETE FROM pending_payments WHERE user_id = %s", (user_id,))
+    conn.commit()
+    conn.close()

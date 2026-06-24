@@ -36,7 +36,10 @@ from database import (
     confirm_payment,
     get_days_since_registration,
     get_connection,
-    is_banned
+    is_banned,
+    save_pending_payment,
+    load_all_pending_payments,
+    delete_pending_payment,
 )
 from config import LTC_ADDRESS, ADMIN_IDS
 from utils.notify import notify_channel
@@ -129,21 +132,20 @@ def safe_edit(bot, call, text: str, reply_markup=None, parse_mode=None):
 
 def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict, one_shot: bool = False):
     """
-    Фоновый поток — проверяет LTC каждые 30 секунд, максимум 60 минут.
+    Фоновый поток — проверяет LTC каждые 30 секунд до истечения инвойса.
     one_shot=True — одиночная проверка без цикла (вызывается при нажатии «Я оплатил»).
     """
     expected_amount = invoice["amount_ltc"]
     payment_id      = invoice["payment_id"]
     invoice_type    = invoice.get("type", "subscription")
     created_at      = invoice.get("created_at", int(time.time()))
-    timeout         = 3600
+    expires_at      = invoice.get("expires_at", int(time.time()) + 3600)
     check_interval  = 30
-    start_time      = time.time()
 
     print("[MONITOR] Старт мониторинга " + payment_id +
           " сумма " + str(expected_amount) + " LTC")
 
-    while time.time() - start_time < timeout:
+    while int(time.time()) < expires_at:
         try:
             payment_received, amount = check_payment(
                 LTC_ADDRESS,
@@ -240,6 +242,7 @@ def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict, one_shot: bo
                     )
 
                 active_payments.pop(user_id, None)
+                delete_pending_payment(user_id)
                 print("[MONITOR] Платёж " + payment_id + " подтверждён!")
                 return
 
@@ -264,6 +267,7 @@ def monitor_payment(bot, chat_id: int, user_id: int, invoice: dict, one_shot: bo
         "Создай новый в меню подписок."
     )
     active_payments.pop(user_id, None)
+    delete_pending_payment(user_id)
     print("[MONITOR] Платёж " + payment_id + " истёк")
 
 
@@ -454,6 +458,7 @@ def register_callback_handlers(bot):
         save_payment(user_id, invoice["payment_id"], sub_type,
                      invoice["amount_ltc"], invoice["amount_usd"], invoice["crystals"])
         active_payments[user_id] = invoice
+        save_pending_payment(user_id, call.message.chat.id, invoice)
 
         safe_edit(bot, call, format_payment_message(invoice),
                   reply_markup=get_payment_keyboard(invoice["amount_ltc"], invoice["wallet"]),
@@ -612,6 +617,7 @@ def register_callback_handlers(bot):
         save_payment(user_id, invoice["payment_id"], pack_type,
                      invoice["amount_ltc"], invoice["amount_usd"], invoice["total_crystals"])
         active_payments[user_id] = invoice
+        save_pending_payment(user_id, call.message.chat.id, invoice)
 
         safe_edit(bot, call, format_payment_message(invoice),
                   reply_markup=get_payment_keyboard(invoice["amount_ltc"], invoice["wallet"]),
@@ -816,3 +822,31 @@ def register_callback_handlers(bot):
             )
 
         safe_edit(bot, call, "\n\n".join(lines), reply_markup=keyboard)
+
+
+# ─────────────────────────────────────────────
+# Восстановление платежей после рестарта
+# ─────────────────────────────────────────────
+
+def restore_pending_payments(bot):
+    """
+    Called once on startup. Loads un-expired pending payments from DB,
+    populates active_payments dict, and resumes monitoring threads.
+    """
+    pending = load_all_pending_payments()
+    if not pending:
+        return
+
+    print("[MONITOR] Восстанавливаем " + str(len(pending)) + " платежей после рестарта")
+    for entry in pending:
+        user_id = entry["user_id"]
+        chat_id = entry["chat_id"]
+        invoice = entry["invoice"]
+        active_payments[user_id] = invoice
+        threading.Thread(
+            target=monitor_payment,
+            args=(bot, chat_id, user_id, invoice),
+            daemon=True
+        ).start()
+        print("[MONITOR] Возобновлён мониторинг " + invoice.get("payment_id", "?") +
+              " для user " + str(user_id))

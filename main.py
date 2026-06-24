@@ -45,7 +45,7 @@ _check_env()
 bot = telebot.TeleBot(BOT_TOKEN)
 
 from handlers.start import register_start_handlers
-from handlers.callback import register_callback_handlers
+from handlers.callback import register_callback_handlers, restore_pending_payments
 from handlers.admin import register_admin_handlers
 from handlers.girls import register_girls_handlers
 from handlers.reviews import register_reviews_handlers
@@ -72,6 +72,7 @@ def main():
     register_vip_handlers(bot)
 
     start_scheduler(bot)
+    restore_pending_payments(bot)
 
     print("✅ Бот Miss Moldova запущен!")
     print("💳 LTC: " + str(LTC_ADDRESS))
