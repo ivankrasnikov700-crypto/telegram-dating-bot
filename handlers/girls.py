@@ -418,8 +418,17 @@ def register_girls_handlers(bot):
             bot.answer_callback_query(call.id, "❌ Модель не найдена", show_alert=True)
             return
 
+        tg_model_id = model.get("telegram_user_id")
+        if not tg_model_id:
+            bot.answer_callback_query(
+                call.id,
+                "⏳ Чат с этой моделью скоро откроется!",
+                show_alert=True
+            )
+            return
+
         try:
-            session = activate_day_chat(user_id, model_id)
+            session = activate_day_chat(user_id, tg_model_id)
         except InsufficientBalanceError:
             balance = get_usd_balance(user_id)
             markup = types.InlineKeyboardMarkup(row_width=1)
@@ -458,12 +467,12 @@ def register_girls_handlers(bot):
             bot.answer_callback_query(call.id, "❌ Ошибка. Попробуй позже.", show_alert=True)
             return
 
-        # Уведомить модель
+        # Уведомить модель (через её Telegram user_id)
         try:
             bot.send_message(
-                model_id,
+                tg_model_id,
                 "💌 Новый фанат открыл чат на 24ч!\n\n"
-                "Пиши прямо сюда — сообщения дойдут до него."
+                "Пиши прямо в этот чат — сообщения дойдут до него 💬"
             )
         except Exception as e:
             print("[START_CHAT] Не удалось уведомить модель: " + str(e))

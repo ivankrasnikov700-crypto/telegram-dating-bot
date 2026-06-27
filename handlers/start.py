@@ -2,7 +2,8 @@
 # Обработчик команды /start — приветственное сообщение с фото
 
 from keyboards.inline import get_main_menu
-from database import register_user, is_banned
+from database import register_user, is_banned, get_user, get_usd_balance
+from database.chat_sessions import get_model_active_chats
 from database.settings import get_setting
 from utils.notify import notify_channel
 
@@ -43,6 +44,30 @@ def register_start_handlers(bot):
         register_user(user_id, username, full_name)
 
         user_ref = ("@" + username) if username else full_name
+
+        user = get_user(user_id)
+        if user and user.get("user_role") == "model":
+            balance = round(float(get_usd_balance(user_id)), 2)
+            try:
+                chats = get_model_active_chats(user_id)
+                chat_count = len(chats)
+            except Exception:
+                chat_count = 0
+            first_name = message.from_user.first_name or "Модель"
+            bot.send_message(
+                message.chat.id,
+                "👋 Привет, " + first_name + "!\n\n"
+                "💰 Баланс: *$" + str(balance) + "*\n"
+                "💬 Активных чатов: " + str(chat_count) + "\n\n"
+                "Команды:\n"
+                "/balance — проверить баланс\n"
+                "/earnings — история заработка\n"
+                "/withdraw — вывести средства\n\n"
+                "Просто пиши сообщение — оно дойдёт до фаната.",
+                parse_mode="Markdown"
+            )
+            return
+
         notify_channel(
             bot,
             "👤 Новый пользователь!\n"

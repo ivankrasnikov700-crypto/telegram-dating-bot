@@ -50,15 +50,16 @@ def init_models_db():
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS models (
-            id SERIAL PRIMARY KEY,
-            name TEXT NOT NULL,
-            age INTEGER NOT NULL DEFAULT 0,
-            birth_date TEXT DEFAULT NULL,
-            username TEXT,
-            description TEXT,
-            preview_photo TEXT,
-            is_active INTEGER DEFAULT 1,
-            created_at BIGINT
+            id               SERIAL PRIMARY KEY,
+            name             TEXT NOT NULL,
+            age              INTEGER NOT NULL DEFAULT 0,
+            birth_date       TEXT DEFAULT NULL,
+            username         TEXT,
+            description      TEXT,
+            preview_photo    TEXT,
+            telegram_user_id BIGINT DEFAULT NULL,
+            is_active        INTEGER DEFAULT 1,
+            created_at       BIGINT
         )
     ''')
 
@@ -254,6 +255,32 @@ def set_preview_photo_2(model_id: int, file_id: str):
     cursor.execute('UPDATE models SET preview_photo_2 = %s WHERE id = %s', (file_id, model_id))
     conn.commit()
     conn.close()
+
+
+def link_model_telegram(model_id: int, telegram_user_id: int):
+    """Link catalog model profile to a real Telegram user account."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE models SET telegram_user_id = %s WHERE id = %s",
+        (telegram_user_id, model_id)
+    )
+    conn.commit()
+    conn.close()
+    print("[DB] Linked model #" + str(model_id) + " to Telegram user " + str(telegram_user_id))
+
+
+def get_model_by_telegram_id(telegram_user_id: int) -> dict | None:
+    """Find catalog model profile by linked Telegram user_id."""
+    conn = get_connection()
+    cursor = _cur(conn)
+    cursor.execute(
+        "SELECT * FROM models WHERE telegram_user_id = %s AND is_active = 1",
+        (telegram_user_id,)
+    )
+    row = cursor.fetchone()
+    conn.close()
+    return _enrich_model(row) if row else None
 
 
 def deactivate_model(model_id: int):

@@ -10,6 +10,7 @@ from database.models import init_models_db
 from database.reviews import init_reviews_db
 from database.settings import init_settings_db
 from database.schedule import init_schedule_db
+from database.withdrawals import init_withdrawals_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -50,6 +51,7 @@ from handlers.girls import register_girls_handlers
 from handlers.reviews import register_reviews_handlers
 from handlers.vip import register_vip_handlers
 from handlers.fan_relay import register_fan_relay_handlers
+from handlers.model_dashboard import register_model_dashboard_handlers
 from handlers.model_relay import register_model_relay_handlers
 from utils.scheduler import start_scheduler, add_scheduler_columns
 
@@ -60,6 +62,7 @@ def main():
     init_reviews_db()
     init_settings_db()
     init_schedule_db()
+    init_withdrawals_db()
     add_scheduler_columns()
 
     register_start_handlers(bot)
@@ -68,8 +71,9 @@ def main():
     register_girls_handlers(bot)
     register_reviews_handlers(bot)
     register_vip_handlers(bot)
-    register_fan_relay_handlers(bot)    # fan → model relay (before model relay)
-    register_model_relay_handlers(bot)  # must be last — catches all model text
+    register_fan_relay_handlers(bot)       # fan → model relay (before model relay)
+    register_model_dashboard_handlers(bot) # model /balance /earnings /withdraw (before relay)
+    register_model_relay_handlers(bot)     # must be last — catches all model text
 
     start_scheduler(bot)
     restore_pending_payments(bot)
