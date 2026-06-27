@@ -161,6 +161,25 @@ def generate_payment_invoice(sub_type: str, user_id: int) -> dict:
     }
 
 
+def generate_topup_invoice(amount_usd: int, user_id: int) -> dict:
+    """Generates unique LTC invoice for USD balance top-up."""
+    ltc_rate = get_ltc_rate()
+    base_amount = round(amount_usd / ltc_rate, 6)
+    amount_ltc = _unique_amount(base_amount)
+    payment_id = str(uuid.uuid4())[:8].upper()
+    return {
+        "payment_id": payment_id,
+        "user_id":    user_id,
+        "amount_usd": amount_usd,
+        "amount_ltc": amount_ltc,
+        "ltc_rate":   ltc_rate,
+        "wallet":     LTC_ADDRESS,
+        "created_at": int(time.time()),
+        "expires_at": int(time.time()) + 3600,
+        "type":       "topup"
+    }
+
+
 def generate_crystal_invoice(pack_type: str, user_id: int) -> dict:
     """Генерирует уникальный счёт на покупку кристаллов."""
     pack_info = CRYSTAL_PACKS.get(pack_type, CRYSTAL_PACKS["pack_50"])
@@ -196,6 +215,19 @@ def generate_crystal_invoice(pack_type: str, user_id: int) -> dict:
 
 def format_payment_message(invoice: dict) -> str:
     """Форматирует сообщение с деталями платежа"""
+
+    if invoice.get("type") == "topup":
+        return (
+            "💵 *Пополнение баланса*\n\n"
+            "🆔 ID платежа: `" + invoice["payment_id"] + "`\n\n"
+            "💵 Будет зачислено: *$" + str(invoice["amount_usd"]) + " USD*\n\n"
+            "💰 Отправить: `" + str(invoice["amount_ltc"]) + " LTC`\n"
+            "📈 Курс: $`" + str(invoice["ltc_rate"]) + "`\n\n"
+            "📬 Адрес кошелька:\n"
+            "`" + invoice["wallet"] + "`\n\n"
+            "⏰ Счёт действителен 60 минут\n\n"
+            "После оплаты нажми ✅ *Я оплатил*"
+        )
 
     if invoice.get("type") == "crystals":
         bonus_text = ""

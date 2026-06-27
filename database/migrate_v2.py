@@ -103,6 +103,16 @@ def create_model_chats_fan_index(cursor):
     )
 
 
+@step("Drop last_bonus_at column from users")
+def drop_last_bonus_at(cursor):
+    cursor.execute("ALTER TABLE users DROP COLUMN IF EXISTS last_bonus_at")
+
+
+@step("Drop bonus_streak column from users")
+def drop_bonus_streak(cursor):
+    cursor.execute("ALTER TABLE users DROP COLUMN IF EXISTS bonus_streak")
+
+
 def run_migration():
     print("=" * 55)
     print("  Miss Moldova v2 — Database Migration")

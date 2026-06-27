@@ -9,7 +9,6 @@ from database import init_db
 from database.models import init_models_db
 from database.reviews import init_reviews_db
 from database.settings import init_settings_db
-from database.bonus import init_bonus_db
 from database.schedule import init_schedule_db
 
 logging.basicConfig(
@@ -49,8 +48,8 @@ from handlers.callback import register_callback_handlers, restore_pending_paymen
 from handlers.admin import register_admin_handlers
 from handlers.girls import register_girls_handlers
 from handlers.reviews import register_reviews_handlers
-from handlers.bonus import register_bonus_handlers
 from handlers.vip import register_vip_handlers
+from handlers.fan_relay import register_fan_relay_handlers
 from handlers.model_relay import register_model_relay_handlers
 from utils.scheduler import start_scheduler, add_scheduler_columns
 
@@ -60,7 +59,6 @@ def main():
     init_models_db()
     init_reviews_db()
     init_settings_db()
-    init_bonus_db()
     init_schedule_db()
     add_scheduler_columns()
 
@@ -69,8 +67,8 @@ def main():
     register_admin_handlers(bot)
     register_girls_handlers(bot)
     register_reviews_handlers(bot)
-    register_bonus_handlers(bot)
     register_vip_handlers(bot)
+    register_fan_relay_handlers(bot)    # fan → model relay (before model relay)
     register_model_relay_handlers(bot)  # must be last — catches all model text
 
     start_scheduler(bot)

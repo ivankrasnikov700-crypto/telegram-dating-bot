@@ -1,5 +1,5 @@
 from telebot import types
-from database import register_user, check_subscription
+from database import register_user
 from database.settings import get_setting
 from database.schedule import format_schedule_list
 
@@ -12,63 +12,25 @@ def register_vip_handlers(bot):
         user_id = call.from_user.id
         register_user(user_id, call.from_user.username or "", call.from_user.full_name or "")
 
-        sub      = check_subscription(user_id)
-        sub_type = sub.get("type") or ""
-        has_premium = sub["active"] and ("premium" in sub_type or sub_type == "test_2min")
-
-        back_kb = types.InlineKeyboardMarkup(row_width=1)
-
-        if not has_premium:
-            back_kb.add(
-                types.InlineKeyboardButton("💎 Оформить Premium", callback_data="subscription"),
-                types.InlineKeyboardButton("🏠 Главное меню",    callback_data="back_to_menu")
-            )
-            text = (
-                "👑 VIP Клуб Miss Moldova\n"
-                "━━━━━━━━━━━━━━━\n\n"
-                "🔒 Только для Premium подписчиков\n\n"
-                "Что тебя ждёт в VIP:\n"
-                "💃 Живые сессии с моделями\n"
-                "📅 Расписание онлайн-встреч\n"
-                "💬 Личные вопросы и ответы\n"
-                "🎁 Эксклюзивные анонсы\n\n"
-                "Оформи Premium — и получи доступ! 👑"
-            )
-            try:
-                bot.edit_message_text(
-                    chat_id=call.message.chat.id,
-                    message_id=call.message.message_id,
-                    text=text,
-                    reply_markup=back_kb
-                )
-            except Exception:
-                bot.send_message(call.message.chat.id, text, reply_markup=back_kb)
-            return
-
-        invite_link = get_setting("vip_invite_link") or ""
+        invite_link   = get_setting("vip_invite_link") or ""
         schedule_text = format_schedule_list()
 
+        back_kb = types.InlineKeyboardMarkup(row_width=1)
         if invite_link:
             back_kb.add(
-                types.InlineKeyboardButton(
-                    "🚀 Войти в VIP Клуб",
-                    url=invite_link
-                )
+                types.InlineKeyboardButton("🚀 Войти в VIP Клуб", url=invite_link)
             )
         back_kb.add(
             types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu")
         )
 
-        days_left = sub.get("days_left", 0)
-
         text = (
             "👑 VIP Клуб Miss Moldova\n"
             "━━━━━━━━━━━━━━━\n\n"
-            "✅ У тебя Premium — добро пожаловать!\n"
-            "⏰ Осталось: " + str(days_left) + " дней\n\n"
+            "Добро пожаловать!\n\n"
             + schedule_text + "\n\n"
             "━━━━━━━━━━━━━━━\n"
-            "💬 В канале модели отвечают на вопросы\n"
+            "💬 Модели отвечают на вопросы в канале\n"
             "🔔 Анонсы приходят за 1 час до сессии"
         )
 

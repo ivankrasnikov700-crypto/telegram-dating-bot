@@ -7,15 +7,14 @@
 
 from telebot import types
 import time
-from database import (
-    register_user,
-    check_subscription
-)
-from database.models import (
-    get_all_models,
-    get_model,
-    get_preview_media,
-    get_all_media
+from database import register_user, get_usd_balance
+from database.models import get_all_models, get_model, get_preview_media, get_all_media
+from database.chat_sessions import (
+    get_active_chat,
+    activate_day_chat,
+    InsufficientBalanceError,
+    ActiveChatExistsError,
+    CHAT_PRICE_USD,
 )
 from utils.notify import notify_channel
 
@@ -80,59 +79,34 @@ def get_girls_list_keyboard(models: list, page: int, total_pages: int) -> types.
     return markup
 
 
-def get_girl_profile_keyboard(model_id: int, has_premium: bool, has_fan: bool) -> types.InlineKeyboardMarkup:
-    """
-    Клавиатура профиля модели.
-    has_premium — полный доступ, has_fan — только превью.
-    """
+def get_girl_profile_keyboard(model_id: int, has_active_chat: bool,
+                              chat_hours_left: int = 0) -> types.InlineKeyboardMarkup:
+    """Клавиатура профиля модели."""
     markup = types.InlineKeyboardMarkup(row_width=1)
 
-    if has_premium:
+    if has_active_chat:
         markup.add(
             types.InlineKeyboardButton(
-                "🔓 Смотреть весь контент",
-                callback_data="girl_full_" + str(model_id)
-            )
-        )
-    elif has_fan:
-        markup.add(
-            types.InlineKeyboardButton(
-                "👁 Смотреть превью (Fan)",
-                callback_data="girl_preview_" + str(model_id)
-            )
-        )
-        markup.add(
-            types.InlineKeyboardButton(
-                "👑 Получить Premium доступ",
-                callback_data="subscription"
+                "💬 Чат активен ещё " + str(chat_hours_left) + "ч — пиши в бот!",
+                callback_data="noop"
             )
         )
     else:
         markup.add(
             types.InlineKeyboardButton(
-                "👁 Превью (нужна Fan/Premium)",
-                callback_data="girl_preview_" + str(model_id)
-            )
-        )
-        markup.add(
-            types.InlineKeyboardButton(
-                "💎 Оформить подписку",
-                callback_data="subscription"
+                "💬 Начать чат ($" + str(int(CHAT_PRICE_USD)) + "/24ч)",
+                callback_data="start_chat_" + str(model_id)
             )
         )
 
     markup.add(
         types.InlineKeyboardButton(
-            "💌 Написать модели",
-            callback_data="contact_girl_" + str(model_id)
+            "📸 Смотреть фото",
+            callback_data="girl_full_" + str(model_id)
         )
     )
-    markup.add(
-        types.InlineKeyboardButton("« Назад к каталогу", callback_data="girls")
-    )
-    markup.add(
-        types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu")
-    )
+    markup.add(types.InlineKeyboardButton("« Назад к каталогу", callback_data="girls"))
+    markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu"))
     return markup
 
 
@@ -197,17 +171,6 @@ def show_catalog(bot, chat_id: int, message_id: int,
     end = start + MODELS_PER_PAGE
     page_models = all_models[start:end]
 
-    sub = check_subscription(user_id)
-
-    if sub["active"]:
-        sub_type_val = sub.get("type") or ""
-        if "premium" in sub_type_val or sub_type_val == "test_2min":
-            access_text = "👑 У тебя Premium — полный доступ!"
-        else:
-            access_text = "🌸 У тебя Fan — превью профилей"
-    else:
-        access_text = "🔒 Нет подписки — только превью"
-
     page_info = ""
     if total_pages > 1:
         page_info = "📄 Страница " + str(page + 1) + " из " + str(total_pages) + "\n"
@@ -217,7 +180,6 @@ def show_catalog(bot, chat_id: int, message_id: int,
         "━━━━━━━━━━━━━━━\n"
         "🔥 " + str(len(all_models)) + " девушек в клубе\n"
         + page_info +
-        "📍 " + access_text + "\n"
         "━━━━━━━━━━━━━━━\n\n"
         "Выбери девушку 👇"
     )
@@ -346,17 +308,17 @@ def register_girls_handlers(bot):
             bot.answer_callback_query(call.id, "❌ Модель не найдена", show_alert=True)
             return
 
-        sub = check_subscription(user_id)
-        sub_type = sub.get("type") or ""
-        has_premium = sub["active"] and ("premium" in sub_type or sub_type == "test_2min")
-        has_fan = sub["active"] and not has_premium
+        active_chat = get_active_chat(user_id, model_id)
+        has_active_chat = active_chat is not None
+        chat_hours_left = 0
+        if active_chat:
+            remaining = max(0, active_chat["expires_at"] - int(time.time()))
+            chat_hours_left = remaining // 3600
 
-        if has_premium:
-            access_label = "👑 Полный доступ"
-        elif has_fan:
-            access_label = "🌸 Fan — превью доступно"
+        if has_active_chat:
+            access_label = "💬 Чат активен ещё " + str(chat_hours_left) + "ч"
         else:
-            access_label = "🔒 Нужна подписка"
+            access_label = "💬 Чат — $" + str(int(CHAT_PRICE_USD)) + "/24ч"
 
         age = model.get("age", "?")
 
@@ -364,12 +326,11 @@ def register_girls_handlers(bot):
             "👩 " + model["name"] + " | " + str(age) + " лет\n"
             "━━━━━━━━━━━━━━━\n\n"
             "📝 " + (model.get("description") or "Описание скоро появится") + "\n\n"
-            "📱 " + ("@" + model["username"] if model.get("username") else "Контакт скрыт") + "\n"
             "━━━━━━━━━━━━━━━\n"
             "🎯 " + access_label
         )
 
-        keyboard = get_girl_profile_keyboard(model_id, has_premium, has_fan)
+        keyboard = get_girl_profile_keyboard(model_id, has_active_chat, chat_hours_left)
         preview_photo  = model.get("preview_photo")
         preview_photo2 = model.get("preview_photo_2")
 
@@ -438,107 +399,114 @@ def register_girls_handlers(bot):
                 else:
                     print("[GIRLS] edit_message_text error: " + str(e))
 
-    # ── Превью для Fan подписки ──────────────
+    # ── Начать чат с моделью ─────────────────
 
     @bot.callback_query_handler(
-        func=lambda call: call.data.startswith("girl_preview_")
+        func=lambda call: call.data.startswith("start_chat_")
     )
-    def girl_preview(call):
-        """
-        Показывает 3 превью фото.
-        Для Fan и Premium подписок.
-        """
-        bot.answer_callback_query(call.id, "🌸 Загружаю превью...")
+    def start_chat(call):
+        bot.answer_callback_query(call.id)
         user_id = call.from_user.id
 
         try:
-            model_id = int(call.data.replace("girl_preview_", ""))
+            model_id = int(call.data.replace("start_chat_", ""))
         except ValueError:
-            return
-
-        sub = check_subscription(user_id)
-
-        if not sub["active"]:
-            bot.answer_callback_query(
-                call.id,
-                "🔒 Нужна Fan или Premium подписка!\n\nОформи в меню 💎",
-                show_alert=True
-            )
             return
 
         model = get_model(model_id)
         if not model:
+            bot.answer_callback_query(call.id, "❌ Модель не найдена", show_alert=True)
             return
 
-        preview_media = get_preview_media(model_id)
-
-        if not preview_media:
-            bot.send_message(
-                call.message.chat.id,
-                "😔 Превью пока не добавлено"
+        try:
+            session = activate_day_chat(user_id, model_id)
+        except InsufficientBalanceError:
+            balance = get_usd_balance(user_id)
+            markup = types.InlineKeyboardMarkup(row_width=1)
+            markup.add(
+                types.InlineKeyboardButton("💵 Пополнить баланс", callback_data="topup_balance"),
+                types.InlineKeyboardButton("« Назад",             callback_data="girls")
+            )
+            try:
+                bot.edit_message_text(
+                    chat_id=call.message.chat.id,
+                    message_id=call.message.message_id,
+                    text=(
+                        "❌ Недостаточно средств\n\n"
+                        "Баланс: $" + str(round(balance, 2)) + "\n"
+                        "Нужно: $" + str(int(CHAT_PRICE_USD)) + "\n\n"
+                        "Пополни баланс и возвращайся!"
+                    ),
+                    reply_markup=markup
+                )
+            except Exception:
+                bot.send_message(
+                    call.message.chat.id,
+                    "❌ Недостаточно средств. Пополни баланс.",
+                    reply_markup=markup
+                )
+            return
+        except ActiveChatExistsError:
+            bot.answer_callback_query(
+                call.id,
+                "💬 Чат уже активен! Просто пиши в этот чат.",
+                show_alert=True
             )
             return
+        except Exception as e:
+            print("[START_CHAT] Ошибка: " + str(e))
+            bot.answer_callback_query(call.id, "❌ Ошибка. Попробуй позже.", show_alert=True)
+            return
 
-        # Отправляем превью фото по одному
-        for i, media in enumerate(preview_media):
-            caption = None
-            if i == 0:
-                caption = (
-                    "🌸 Превью — " + model["name"] + "\n"
-                    "📸 " + str(len(preview_media)) + " фото\n\n"
-                    "👑 Хочешь больше? Оформи Premium!"
-                )
-            try:
-                if media["media_type"] == "photo":
-                    bot.send_photo(
-                        chat_id=call.message.chat.id,
-                        photo=media["file_id"],
-                        caption=caption
-                    )
-                elif media["media_type"] == "video":
-                    bot.send_video(
-                        chat_id=call.message.chat.id,
-                        video=media["file_id"],
-                        caption=caption
-                    )
-            except Exception as e:
-                print("[GIRLS] Ошибка превью: " + str(e))
-            time.sleep(0.3)
+        # Уведомить модель
+        try:
+            bot.send_message(
+                model_id,
+                "💌 Новый фанат открыл чат на 24ч!\n\n"
+                "Пиши прямо сюда — сообщения дойдут до него."
+            )
+        except Exception as e:
+            print("[START_CHAT] Не удалось уведомить модель: " + str(e))
 
-        bot.send_message(
-            chat_id=call.message.chat.id,
-            text=(
-                "━━━━━━━━━━━━━━━\n"
-                "👆 Превью " + model["name"] + "\n\n"
-                "Полный контент доступен по Premium 👑"
-            ),
-            reply_markup=get_back_to_catalog_keyboard(model_id)
+        hours_left = max(0, session["expires_at"] - int(time.time())) // 3600
+        markup = types.InlineKeyboardMarkup(row_width=1)
+        markup.add(
+            types.InlineKeyboardButton("« Назад к каталогу", callback_data="girls"),
+            types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu")
         )
+        try:
+            bot.edit_message_text(
+                chat_id=call.message.chat.id,
+                message_id=call.message.message_id,
+                text=(
+                    "✅ Чат с " + model["name"] + " открыт!\n\n"
+                    "⏰ Активен ещё " + str(hours_left) + " часов\n"
+                    "💵 Списано: $" + str(int(CHAT_PRICE_USD)) + "\n\n"
+                    "Пиши прямо в этот бот — "
+                    "сообщения дойдут до модели 💬"
+                ),
+                reply_markup=markup
+            )
+        except Exception:
+            bot.send_message(
+                call.message.chat.id,
+                "✅ Чат открыт! Пиши прямо в этот бот.",
+                reply_markup=markup
+            )
 
-    # ── Полный контент для Premium ───────────
+    # ── Фото/видео модели (бесплатный просмотр) ──
 
     @bot.callback_query_handler(
         func=lambda call: call.data.startswith("girl_full_")
     )
     def girl_full_content(call):
-        """Показывает весь контент модели. Только Premium."""
-        bot.answer_callback_query(call.id, "🔓 Загружаю контент...")
+        """Показывает все фото и видео модели."""
+        bot.answer_callback_query(call.id, "📸 Загружаю...")
         user_id = call.from_user.id
 
         try:
             model_id = int(call.data.replace("girl_full_", ""))
         except ValueError:
-            return
-
-        sub = check_subscription(user_id)
-
-        sub_type = sub.get("type") or ""
-        if not sub["active"] or ("premium" not in sub_type and sub_type != "test_2min"):
-            bot.answer_callback_query(
-                call.id,
-                "👑 Только для Premium подписчиков!\n\nОформи Premium в меню 💎",
-                show_alert=True
-            )
             return
 
         model = get_model(model_id)
@@ -584,92 +552,8 @@ def register_girls_handlers(bot):
             chat_id=call.message.chat.id,
             text=(
                 "━━━━━━━━━━━━━━━\n"
-                "✅ Весь контент " + model["name"] + " загружен\n\n"
-                "🔥 Новый контент выходит каждую неделю!"
+                "✅ Фото " + model["name"] + " загружены\n\n"
+                "💬 Хочешь пообщаться? Купи чат за $" + str(int(CHAT_PRICE_USD)) + "!"
             ),
             reply_markup=get_back_to_catalog_keyboard(model_id)
-        )
-
-    # ── Написать девушке ─────────────────────
-
-    @bot.callback_query_handler(
-        func=lambda call: call.data.startswith("contact_girl_")
-    )
-    def contact_girl(call):
-        """Запрос на знакомство — уведомляет админа, показывает попап."""
-        user_id = call.from_user.id
-
-        try:
-            model_id = int(call.data.replace("contact_girl_", ""))
-        except ValueError:
-            bot.answer_callback_query(call.id)
-            return
-
-        model = get_model(model_id)
-        if not model:
-            bot.answer_callback_query(call.id)
-            return
-
-        bot.answer_callback_query(
-            call.id,
-            "💌 Ваш запрос принят!\n\n"
-            "Администрация Miss Moldova свяжется с вами в ближайшее время.\n\n"
-            "Ожидайте сообщения ❤️",
-            show_alert=True
-        )
-
-        sub      = check_subscription(user_id)
-        username  = call.from_user.username
-        full_name = call.from_user.full_name or "Пользователь"
-        user_ref  = "@" + username if username else full_name
-        sub_type  = sub.get("type") or ""
-        if sub["active"] and "premium" in sub_type:
-            sub_name = "👑 Premium"
-        elif sub["active"]:
-            sub_name = "🌸 Fan"
-        else:
-            sub_name = "❌ Нет подписки"
-
-        notify_text = (
-            "💌 Новый запрос — Написать модели\n"
-            "━━━━━━━━━━━━━━━\n\n"
-            "👤 Пользователь: " + user_ref + "\n"
-            "🆔 ID: " + str(user_id) + "\n"
-            "💳 Подписка: " + sub_name + "\n\n"
-            "💃 Модель: " + model["name"] + "\n\n"
-            "━━━━━━━━━━━━━━━"
-        )
-
-        reply_keyboard = types.InlineKeyboardMarkup()
-        reply_keyboard.add(
-            types.InlineKeyboardButton(
-                "💬 Ответить пользователю",
-                callback_data="admin_reply_" + str(user_id)
-            )
-        )
-
-        from config import ADMIN_IDS, CONTACT_MANAGER_ID
-
-        # Уведомление всем админам
-        for admin_id in ADMIN_IDS:
-            try:
-                bot.send_message(admin_id, notify_text, reply_markup=reply_keyboard)
-            except Exception as e:
-                print("[CONTACT] Ошибка уведомления admin " + str(admin_id) + ": " + str(e))
-
-        # Личное уведомление @Viktoria11051
-        if CONTACT_MANAGER_ID and CONTACT_MANAGER_ID not in ADMIN_IDS:
-            try:
-                bot.send_message(CONTACT_MANAGER_ID, notify_text, reply_markup=reply_keyboard)
-            except Exception as e:
-                print("[CONTACT] Ошибка уведомления менеджера: " + str(e))
-
-        notify_channel(
-            bot,
-            "💌 Запрос — Написать модели\n"
-            "━━━━━━━━━━━━━━━\n"
-            "👤 " + user_ref + "\n"
-            "🆔 ID: " + str(user_id) + "\n"
-            "💳 " + sub_name + "\n"
-            "💃 Модель: " + model["name"]
         )
