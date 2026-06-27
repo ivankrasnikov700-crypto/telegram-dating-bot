@@ -176,6 +176,21 @@ def deactivate_chat(chat_id: str):
     conn.close()
 
 
+def deactivate_all_model_chats(model_id: int) -> int:
+    """Deactivates all active chat sessions for a model (used on 3rd-strike ban)."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE model_chats SET is_active = 0 "
+        "WHERE model_id = %s AND is_active = 1",
+        (model_id,)
+    )
+    count = cursor.rowcount
+    conn.commit()
+    conn.close()
+    return count
+
+
 def expire_old_chats():
     """Marks expired sessions as inactive. Call from scheduler every 10 min."""
     now  = int(time.time())

@@ -1,9 +1,10 @@
 import re
 import time
-from database import get_user, get_connection
+from database import get_user, get_connection, increment_warning
 from database.chat_sessions import (
     get_model_active_chats,
     deactivate_chat,
+    deactivate_all_model_chats,
 )
 from database.models import get_model
 from utils.notify import notify_channel
@@ -98,27 +99,60 @@ def check_for_fraud(text: str) -> tuple:
 # Process model → fan message relay
 # ─────────────────────────────────────────────
 
-def process_model_reply(bot, model_id: int, fan_id: int, text_content: str) -> dict:
+def process_model_reply(bot, model_id: int, fan_id: int,
+                        text_content: str, message_id: int = None) -> dict:
     """
     Validates and relays a model's text message to a fan.
 
-    If fraud detected:
-        - Bans the model (users.is_banned = 1)
-        - Deactivates the active chat session
-        - Alerts admin channel
-        - Notifies the model of the ban
+    Fraud → 3-strike system:
+        Strike 1 & 2: delete message, warn model [N/2], log to admin channel
+        Strike 3+:    ban model, deactivate ALL chats, alert admin channel
 
-    If clean:
-        - Forwards message to fan anonymously
+    Clean → forward message to fan anonymously.
 
     Returns:
-        {"ok": True}  or  {"ok": False, "reason": str}
+        {"ok": True}
+        {"ok": False, "warning": N, "reason": str}
+        {"ok": False, "banned": True, "reason": str}
     """
     is_fraud, trigger = check_for_fraud(text_content)
-    chat_id = str(fan_id) + "_" + str(model_id)
 
     if is_fraud:
-        # Ban the model
+        new_count = increment_warning(model_id)
+
+        # Always try to delete the offending message
+        if message_id:
+            try:
+                bot.delete_message(model_id, message_id)
+            except Exception:
+                pass
+
+        if new_count <= 2:
+            # Warning — no ban yet
+            try:
+                bot.send_message(
+                    model_id,
+                    "⚠️ Предупреждение [" + str(new_count) + "/2]\n\n"
+                    "Триггер: " + trigger + "\n"
+                    "Сообщение заблокировано и удалено.\n\n"
+                    "На 3-м нарушении аккаунт будет заблокирован немедленно."
+                )
+            except Exception as e:
+                print("[RELAY] Не удалось отправить предупреждение модели " + str(model_id) + ": " + str(e))
+
+            alert = (
+                "⚠️ АНТИФРОД — ПРЕДУПРЕЖДЕНИЕ [" + str(new_count) + "/2]\n"
+                "━━━━━━━━━━━━━━━\n"
+                "👩 Модель ID: " + str(model_id) + "\n"
+                "👤 Фанат ID: " + str(fan_id) + "\n"
+                "⚡ Триггер: " + trigger + "\n"
+                "📝 Сообщение:\n«" + text_content[:300] + "»"
+            )
+            notify_channel(bot, alert)
+            print("[RELAY] WARNING " + str(new_count) + "/2 model " + str(model_id) + " trigger=" + trigger)
+            return {"ok": False, "warning": new_count, "reason": trigger}
+
+        # Strike 3+ → permanent ban
         conn = get_connection()
         cursor = conn.cursor()
         cursor.execute(
@@ -128,34 +162,32 @@ def process_model_reply(bot, model_id: int, fan_id: int, text_content: str) -> d
         conn.commit()
         conn.close()
 
-        # Kill the chat session
-        deactivate_chat(chat_id)
+        closed = deactivate_all_model_chats(model_id)
 
-        # Alert admin channel
         alert = (
-            "🚨 АНТИФРОД — АВТОБАН\n"
+            "🚨 АНТИФРОД — АВТОБАН (3-е нарушение)\n"
             "━━━━━━━━━━━━━━━\n"
             "👩 Модель ID: " + str(model_id) + "\n"
             "👤 Фанат ID: " + str(fan_id) + "\n"
             "⚡ Триггер: " + trigger + "\n"
+            "🔒 Закрыто чатов: " + str(closed) + "\n"
             "📝 Сообщение:\n«" + text_content[:300] + "»"
         )
         notify_channel(bot, alert)
 
-        # Notify model
         try:
             bot.send_message(
                 model_id,
                 "❌ Ваш аккаунт заблокирован.\n\n"
-                "Причина: попытка передать контактные данные вне платформы.\n"
+                "Причина: 3 нарушения — попытка передать контактные данные вне платформы.\n"
                 "Это нарушает правила Miss Moldova.\n\n"
                 "По вопросам обращайтесь к администратору."
             )
         except Exception as e:
             print("[RELAY] Не удалось уведомить модель " + str(model_id) + ": " + str(e))
 
-        print("[RELAY] AUTOBAN model " + str(model_id) + " trigger=" + trigger)
-        return {"ok": False, "reason": trigger}
+        print("[RELAY] AUTOBAN model " + str(model_id) + " (strike 3) trigger=" + trigger)
+        return {"ok": False, "banned": True, "reason": trigger}
 
     # Message is clean — relay to fan
     model_info = get_model_display_name(model_id)
@@ -190,7 +222,7 @@ def get_model_display_name(model_id: int) -> str:
 _pending_model_messages = {}
 
 
-def _build_fan_selector(bot, model_id: int, text: str, chats: list):
+def _build_fan_selector(bot, model_id: int, text: str, chats: list, message_id: int = None):
     """When model has multiple active fans, ask them to pick a recipient."""
     from telebot import types
 
@@ -208,8 +240,9 @@ def _build_fan_selector(bot, model_id: int, text: str, chats: list):
     markup.add(types.InlineKeyboardButton("❌ Отмена", callback_data="relay_cancel"))
 
     _pending_model_messages[model_id] = {
-        "text":      text,
-        "timestamp": int(time.time()),
+        "text":       text,
+        "message_id": message_id,
+        "timestamp":  int(time.time()),
     }
 
     bot.send_message(
@@ -253,9 +286,9 @@ def register_model_relay_handlers(bot):
 
         if len(chats) == 1:
             fan_id = chats[0]["fan_id"]
-            process_model_reply(bot, model_id, fan_id, text)
+            process_model_reply(bot, model_id, fan_id, text, message_id=message.message_id)
         else:
-            _build_fan_selector(bot, model_id, text, chats)
+            _build_fan_selector(bot, model_id, text, chats, message_id=message.message_id)
 
     @bot.callback_query_handler(
         func=lambda call: call.data.startswith("relay_to_") or call.data == "relay_cancel"
@@ -293,7 +326,8 @@ def register_model_relay_handlers(bot):
             )
             return
 
-        result = process_model_reply(bot, model_id, fan_id, pending["text"])
+        result = process_model_reply(bot, model_id, fan_id, pending["text"],
+                                     message_id=pending.get("message_id"))
 
         if result["ok"]:
             bot.edit_message_text(

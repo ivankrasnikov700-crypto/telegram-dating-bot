@@ -80,6 +80,13 @@ def create_model_chats(cursor):
     """)
 
 
+@step("Add warnings_count column to users")
+def add_warnings_count(cursor):
+    cursor.execute(
+        "ALTER TABLE users ADD COLUMN IF NOT EXISTS warnings_count INTEGER DEFAULT 0"
+    )
+
+
 @step("Create index on model_chats(model_id, is_active)")
 def create_model_chats_index(cursor):
     cursor.execute(

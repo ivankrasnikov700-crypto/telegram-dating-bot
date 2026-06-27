@@ -32,6 +32,7 @@ def init_db():
             profiles_viewed      INTEGER DEFAULT 0,
             favorites_count      INTEGER DEFAULT 0,
             gifts_sent           INTEGER DEFAULT 0,
+            warnings_count       INTEGER DEFAULT 0,
             created_at           BIGINT
         )
     ''')
@@ -267,6 +268,21 @@ def confirm_payment(payment_id: str):
     ''', (payment_id,))
     conn.commit()
     conn.close()
+
+
+def increment_warning(user_id: int) -> int:
+    """Atomically increments warnings_count and returns the new value."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute(
+        "UPDATE users SET warnings_count = warnings_count + 1 "
+        "WHERE user_id = %s RETURNING warnings_count",
+        (user_id,)
+    )
+    new_count = cursor.fetchone()[0]
+    conn.commit()
+    conn.close()
+    return new_count
 
 
 def get_days_since_registration(user_id: int) -> int:
