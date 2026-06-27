@@ -20,60 +20,66 @@ def init_db():
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS users (
-            user_id BIGINT PRIMARY KEY,
-            username TEXT,
-            full_name TEXT,
-            crystals INTEGER DEFAULT 0,
-            subscription_type TEXT DEFAULT NULL,
+            user_id              BIGINT PRIMARY KEY,
+            username             TEXT,
+            full_name            TEXT,
+            balance_usd          REAL DEFAULT 0.0,
+            user_role            TEXT DEFAULT 'fan',
+            is_banned            INTEGER DEFAULT 0,
+            subscription_type    TEXT DEFAULT NULL,
             subscription_expires BIGINT DEFAULT NULL,
             subscription_notified INTEGER DEFAULT 0,
-            profiles_viewed INTEGER DEFAULT 0,
-            favorites_count INTEGER DEFAULT 0,
-            gifts_sent INTEGER DEFAULT 0,
-            created_at BIGINT
+            profiles_viewed      INTEGER DEFAULT 0,
+            favorites_count      INTEGER DEFAULT 0,
+            gifts_sent           INTEGER DEFAULT 0,
+            created_at           BIGINT
         )
     ''')
 
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS payments (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL,
+            id         SERIAL PRIMARY KEY,
+            user_id    BIGINT NOT NULL,
             payment_id TEXT NOT NULL,
-            sub_type TEXT NOT NULL,
+            sub_type   TEXT NOT NULL,
             amount_ltc REAL NOT NULL,
             amount_usd REAL NOT NULL,
-            crystals_added INTEGER DEFAULT 0,
-            status TEXT DEFAULT 'pending',
+            status     TEXT DEFAULT 'pending',
             created_at BIGINT,
             FOREIGN KEY (user_id) REFERENCES users(user_id)
         )
     ''')
 
     cursor.execute('''
-        CREATE TABLE IF NOT EXISTS crystal_transactions (
-            id SERIAL PRIMARY KEY,
-            user_id BIGINT NOT NULL,
-            amount INTEGER NOT NULL,
-            reason TEXT NOT NULL,
-            created_at BIGINT,
-            FOREIGN KEY (user_id) REFERENCES users(user_id)
+        CREATE TABLE IF NOT EXISTS balance_transactions (
+            id         SERIAL PRIMARY KEY,
+            user_id    BIGINT NOT NULL,
+            amount_usd REAL NOT NULL,
+            reason     TEXT NOT NULL,
+            created_at BIGINT NOT NULL
+        )
+    ''')
+
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS model_chats (
+            chat_id    TEXT PRIMARY KEY,
+            fan_id     BIGINT NOT NULL,
+            model_id   BIGINT NOT NULL,
+            expires_at BIGINT NOT NULL,
+            is_active  INTEGER DEFAULT 1,
+            created_at BIGINT NOT NULL
         )
     ''')
 
     # Pending LTC payments — survives bot restarts
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS pending_payments (
-            user_id BIGINT PRIMARY KEY,
-            chat_id BIGINT NOT NULL,
+            user_id      BIGINT PRIMARY KEY,
+            chat_id      BIGINT NOT NULL,
             invoice_json TEXT NOT NULL,
-            created_at BIGINT NOT NULL
+            created_at   BIGINT NOT NULL
         )
     ''')
-
-    # Ensure is_banned column exists (idempotent)
-    cursor.execute(
-        "ALTER TABLE users ADD COLUMN IF NOT EXISTS is_banned INTEGER DEFAULT 0"
-    )
 
     conn.commit()
     conn.close()
@@ -130,40 +136,27 @@ def activate_subscription(user_id: int, sub_type: str, days: int, crystals: int,
           " истекает в " + str(expires_at))
 
 
-def add_crystals(user_id: int, amount: int, reason: str):
+def add_usd_balance(user_id: int, amount: float, reason: str):
+    """Credits USD to user balance and logs in balance_transactions."""
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        UPDATE users SET crystals = crystals + %s
-        WHERE user_id = %s
-    ''', (amount, user_id))
-    cursor.execute('''
-        INSERT INTO crystal_transactions (user_id, amount, reason, created_at)
-        VALUES (%s, %s, %s, %s)
-    ''', (user_id, amount, reason, int(time.time())))
+    cursor.execute(
+        "UPDATE users SET balance_usd = balance_usd + %s WHERE user_id = %s",
+        (amount, user_id)
+    )
+    cursor.execute(
+        "INSERT INTO balance_transactions (user_id, amount_usd, reason, created_at) "
+        "VALUES (%s, %s, %s, %s)",
+        (user_id, amount, reason, int(time.time()))
+    )
     conn.commit()
     conn.close()
 
 
-def spend_crystals(user_id: int, amount: int, reason: str) -> bool:
-    conn = get_connection()
-    cursor = conn.cursor()
-    # Atomic: deduct only if balance is sufficient — no race condition
-    cursor.execute('''
-        UPDATE users SET crystals = crystals - %s
-        WHERE user_id = %s AND crystals >= %s
-    ''', (amount, user_id, amount))
-    if cursor.rowcount == 0:
-        conn.rollback()
-        conn.close()
-        return False
-    cursor.execute('''
-        INSERT INTO crystal_transactions (user_id, amount, reason, created_at)
-        VALUES (%s, %s, %s, %s)
-    ''', (user_id, -amount, reason, int(time.time())))
-    conn.commit()
-    conn.close()
-    return True
+def get_usd_balance(user_id: int) -> float:
+    """Returns current USD balance for user."""
+    user = get_user(user_id)
+    return float(user.get("balance_usd", 0.0)) if user else 0.0
 
 
 def get_all_user_ids() -> list:
@@ -253,14 +246,14 @@ def cancel_subscription(user_id: int):
 
 
 def save_payment(user_id: int, payment_id: str, sub_type: str,
-                 amount_ltc: float, amount_usd: float, crystals: int):
+                 amount_ltc: float, amount_usd: float, crystals: int = 0):
     conn = get_connection()
     cursor = conn.cursor()
-    cursor.execute('''
-        INSERT INTO payments
-        (user_id, payment_id, sub_type, amount_ltc, amount_usd, crystals_added, created_at)
-        VALUES (%s, %s, %s, %s, %s, %s, %s)
-    ''', (user_id, payment_id, sub_type, amount_ltc, amount_usd, crystals, int(time.time())))
+    cursor.execute(
+        "INSERT INTO payments (user_id, payment_id, sub_type, amount_ltc, amount_usd, created_at) "
+        "VALUES (%s, %s, %s, %s, %s, %s)",
+        (user_id, payment_id, sub_type, amount_ltc, amount_usd, int(time.time()))
+    )
     conn.commit()
     conn.close()
 

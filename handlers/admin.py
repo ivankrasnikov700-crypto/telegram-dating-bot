@@ -6,7 +6,10 @@ import time
 
 from telebot import types
 from config import ADMIN_IDS, LTC_ADDRESS
-from database import get_all_user_ids, ban_user, unban_user, is_banned, get_user_by_username
+from database import (
+    get_all_user_ids, ban_user, unban_user, is_banned,
+    get_user_by_username, get_user, get_connection, add_usd_balance,
+)
 from database.reviews import add_review, get_reviews, delete_review
 from database.settings import get_setting, set_setting
 from database.schedule import (
@@ -754,6 +757,126 @@ def register_admin_handlers(bot):
             bot.send_message(message.chat.id, "❌ Операция отменена")
         else:
             bot.send_message(message.chat.id, "Нет активной операции")
+
+    # ── Управление ролями ─────────────────────
+
+    def _set_user_role(user_id: int, role: str):
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE users SET user_role = %s WHERE user_id = %s",
+            (role, user_id)
+        )
+        conn.commit()
+        conn.close()
+
+    @bot.message_handler(commands=['setmodel'])
+    def set_model_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(
+                message.chat.id,
+                "👩 Назначить модель:\n\n"
+                "/setmodel USER_ID\n\n"
+                "Пользователь должен был хотя бы раз запустить бота.\n"
+                "Отменить: /setfan USER_ID"
+            )
+            return
+        target_id = int(parts[1])
+        user = get_user(target_id)
+        if not user:
+            bot.send_message(
+                message.chat.id,
+                "❌ Пользователь " + str(target_id) + " не найден.\n"
+                "Он должен запустить бота командой /start."
+            )
+            return
+        _set_user_role(target_id, "model")
+        bot.send_message(
+            message.chat.id,
+            "✅ Пользователь " + str(target_id) + " назначен моделью.\n\n"
+            "👩 Роль: model\n"
+            "Теперь все её сообщения бот проверяет антифродом и пересылает фанатам.\n\n"
+            "Отменить: /setfan " + str(target_id)
+        )
+        notify_channel(
+            bot,
+            "👩 Новая модель зарегистрирована\n"
+            "━━━━━━━━━━━━━━━\n"
+            "🆔 User ID: " + str(target_id) + "\n"
+            "👮 Назначил: " + str(message.from_user.id)
+        )
+        try:
+            bot.send_message(
+                target_id,
+                "✅ Твой аккаунт активирован как модель!\n\n"
+                "Когда фанат купит 24-часовой чат — ты получишь уведомление.\n"
+                "Пиши мне прямо сюда, я пересылаю сообщения фанатам.\n\n"
+                "❗ Запрещено: делиться контактами, ссылками, номерами телефона.\n"
+                "Нарушение = автоматический бан."
+            )
+        except Exception as e:
+            print("[SETMODEL] Уведомление модели не доставлено: " + str(e))
+
+    @bot.message_handler(commands=['setfan'])
+    def set_fan_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Использование: /setfan USER_ID")
+            return
+        target_id = int(parts[1])
+        _set_user_role(target_id, "fan")
+        bot.send_message(
+            message.chat.id,
+            "✅ Пользователь " + str(target_id) + " переведён в роль fan."
+        )
+
+    @bot.message_handler(commands=['topup'])
+    def topup_command(message):
+        """Admin manually tops up a user's USD balance."""
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 3 or not parts[1].isdigit():
+            bot.send_message(
+                message.chat.id,
+                "💵 Пополнить баланс:\n\n"
+                "/topup USER_ID СУММА\n\n"
+                "Пример: /topup 123456789 10.00"
+            )
+            return
+        target_id = int(parts[1])
+        try:
+            amount = float(parts[2])
+        except ValueError:
+            bot.send_message(message.chat.id, "❌ Некорректная сумма")
+            return
+        if amount <= 0:
+            bot.send_message(message.chat.id, "❌ Сумма должна быть > 0")
+            return
+        user = get_user(target_id)
+        if not user:
+            bot.send_message(message.chat.id, "❌ Пользователь не найден")
+            return
+        add_usd_balance(target_id, amount, "Пополнение администратором")
+        bot.send_message(
+            message.chat.id,
+            "✅ Баланс пополнен!\n\n"
+            "👤 User: " + str(target_id) + "\n"
+            "💵 Сумма: +$" + str(round(amount, 2)) + "\n"
+            "👮 Добавил: " + str(message.from_user.id)
+        )
+        try:
+            bot.send_message(
+                target_id,
+                "💵 Ваш баланс пополнен: +$" + str(round(amount, 2))
+            )
+        except Exception:
+            pass
 
     # ── Ответ пользователю через бота ────────
 
