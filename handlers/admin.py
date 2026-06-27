@@ -27,7 +27,13 @@ from database.models import (
     deactivate_model,
     get_preview_media,
     get_all_media,
-    calculate_age
+    calculate_age,
+    link_model_telegram,
+)
+from database.withdrawals import (
+    get_pending_withdrawals,
+    get_withdrawal,
+    process_withdrawal,
 )
 
 # Состояния админа: user_id → строка состояния
@@ -437,11 +443,185 @@ def register_admin_handlers(bot):
         lines = ["📋 Список моделей:\n"]
         for model in models:
             birth_info = (" (ДР: " + model["birth_date"] + ")") if model.get("birth_date") else ""
+            tg_uid = model.get("telegram_user_id")
+            link_status = ("🔗 " + str(tg_uid)) if tg_uid else "⚠️ не привязана"
             lines.append(
                 "👩 " + model["name"] + " | " + str(model["age"]) + " лет" + birth_info + "\n"
-                "ID: " + str(model["id"])
+                "ID: " + str(model["id"]) + " | TG: " + link_status
             )
+        lines.append("\nПривязать: /linkmodel MODEL_ID TG_USER_ID")
         bot.send_message(message.chat.id, "\n\n".join(lines))
+
+    # ── Привязать модель к Telegram аккаунту ─
+
+    @bot.message_handler(commands=['linkmodel'])
+    def link_model_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split()
+        if len(parts) < 3 or not parts[1].isdigit() or not parts[2].isdigit():
+            bot.send_message(
+                message.chat.id,
+                "🔗 Привязать профиль модели к Telegram аккаунту:\n\n"
+                "/linkmodel MODEL_ID TELEGRAM_USER_ID\n\n"
+                "Пример: /linkmodel 2 123456789\n\n"
+                "MODEL_ID — из /models\n"
+                "TELEGRAM_USER_ID — Telegram ID аккаунта модели\n\n"
+                "Эффект:\n"
+                "• Профиль каталога связывается с аккаунтом\n"
+                "• Роль пользователя становится 'model'\n"
+                "• Фанаты смогут открыть чат с этой моделью"
+            )
+            return
+        model_id = int(parts[1])
+        tg_uid   = int(parts[2])
+        model = get_model(model_id)
+        if not model:
+            bot.send_message(message.chat.id, "❌ Модель #" + str(model_id) + " не найдена")
+            return
+        user = get_user(tg_uid)
+        if not user:
+            bot.send_message(
+                message.chat.id,
+                "❌ Пользователь " + str(tg_uid) + " не найден.\n"
+                "Модель должна сначала написать /start боту."
+            )
+            return
+        link_model_telegram(model_id, tg_uid)
+        _set_user_role(tg_uid, "model")
+        bot.send_message(
+            message.chat.id,
+            "✅ Профиль «" + model["name"] + "» (#" + str(model_id) + ") "
+            "связан с пользователем " + str(tg_uid) + "\n\n"
+            "Теперь фанаты могут открыть чат с этой моделью."
+        )
+        try:
+            bot.send_message(
+                tg_uid,
+                "✅ Твой профиль «" + model["name"] + "» активирован!\n\n"
+                "Когда фанат купит 24-часовой чат — ты получишь уведомление и сможешь писать прямо сюда.\n\n"
+                "Команды:\n"
+                "/balance — твой баланс\n"
+                "/earnings — статистика\n"
+                "/withdraw — вывод средств"
+            )
+        except Exception as e:
+            print("[LINKMODEL] Уведомление модели не доставлено: " + str(e))
+        notify_channel(
+            bot,
+            "🔗 Модель привязана к аккаунту\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👩 Профиль: " + model["name"] + " (#" + str(model_id) + ")\n"
+            "🆔 TG User: " + str(tg_uid) + "\n"
+            "👮 Привязал: " + str(message.from_user.id)
+        )
+
+    # ── Заявки на вывод средств ───────────────
+
+    @bot.message_handler(commands=['withdrawals'])
+    def withdrawals_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        pending = get_pending_withdrawals()
+        if not pending:
+            bot.send_message(message.chat.id, "✅ Нет pending заявок на вывод")
+            return
+        lines = ["💸 Заявки на вывод (pending: " + str(len(pending)) + "):\n"]
+        for w in pending:
+            lines.append(
+                "━━━━━━━━━━━━━━━\n"
+                "🆔 Заявка #" + str(w["id"]) + "\n"
+                "👤 Модель: " + str(w["model_user_id"]) + "\n"
+                "💵 Сумма: $" + str(round(w["amount_usd"], 2)) + "\n"
+                "📬 LTC: " + w["ltc_address"] + "\n\n"
+                "/approve " + str(w["id"]) + " — одобрить\n"
+                "/reject " + str(w["id"]) + " причина — отклонить"
+            )
+        bot.send_message(message.chat.id, "\n".join(lines))
+
+    @bot.message_handler(commands=['approve'])
+    def approve_withdrawal_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 2 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Использование: /approve ID [примечание]")
+            return
+        req_id = int(parts[1])
+        notes  = parts[2].strip() if len(parts) > 2 else ""
+        req = get_withdrawal(req_id)
+        if not req:
+            bot.send_message(message.chat.id, "❌ Заявка #" + str(req_id) + " не найдена")
+            return
+        if req["status"] != "pending":
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Заявка #" + str(req_id) + " уже обработана (статус: " + req["status"] + ")"
+            )
+            return
+        result = process_withdrawal(req_id, "paid", notes)
+        if not result:
+            bot.send_message(message.chat.id, "❌ Ошибка обработки заявки")
+            return
+        bot.send_message(
+            message.chat.id,
+            "✅ Заявка #" + str(req_id) + " одобрена!\n\n"
+            "👤 Модель: " + str(req["model_user_id"]) + "\n"
+            "💵 Сумма: $" + str(round(req["amount_usd"], 2)) + "\n"
+            "📬 LTC: " + req["ltc_address"] + "\n\n"
+            "Баланс модели списан. Уведомление отправлено."
+        )
+        try:
+            bot.send_message(
+                req["model_user_id"],
+                "✅ Выплата одобрена!\n\n"
+                "💵 Сумма: $" + str(round(req["amount_usd"], 2)) + "\n"
+                "📬 Адрес: " + req["ltc_address"] + "\n\n"
+                "LTC отправлен на ваш кошелёк." +
+                ("\n\nПримечание: " + notes if notes else "")
+            )
+        except Exception as e:
+            print("[APPROVE] Уведомление модели не доставлено: " + str(e))
+
+    @bot.message_handler(commands=['reject'])
+    def reject_withdrawal_command(message):
+        if not is_admin(message.from_user.id):
+            return
+        parts = message.text.split(maxsplit=2)
+        if len(parts) < 3 or not parts[1].isdigit():
+            bot.send_message(message.chat.id, "❌ Использование: /reject ID причина")
+            return
+        req_id = int(parts[1])
+        reason = parts[2].strip()
+        req = get_withdrawal(req_id)
+        if not req:
+            bot.send_message(message.chat.id, "❌ Заявка #" + str(req_id) + " не найдена")
+            return
+        if req["status"] != "pending":
+            bot.send_message(
+                message.chat.id,
+                "⚠️ Заявка #" + str(req_id) + " уже обработана (статус: " + req["status"] + ")"
+            )
+            return
+        process_withdrawal(req_id, "rejected", reason)
+        bot.send_message(
+            message.chat.id,
+            "❌ Заявка #" + str(req_id) + " отклонена.\n\n"
+            "👤 Модель: " + str(req["model_user_id"]) + "\n"
+            "💵 Сумма: $" + str(round(req["amount_usd"], 2)) + "\n"
+            "📝 Причина: " + reason + "\n\n"
+            "Баланс модели НЕ списан."
+        )
+        try:
+            bot.send_message(
+                req["model_user_id"],
+                "❌ Заявка на вывод #" + str(req_id) + " отклонена.\n\n"
+                "💵 Сумма: $" + str(round(req["amount_usd"], 2)) + "\n"
+                "📝 Причина: " + reason + "\n\n"
+                "Твой баланс не изменился. При вопросах обратись к администратору."
+            )
+        except Exception as e:
+            print("[REJECT] Уведомление модели не доставлено: " + str(e))
 
     # ── Редактировать модель ─────────────────
 

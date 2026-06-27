@@ -113,6 +113,36 @@ def drop_bonus_streak(cursor):
     cursor.execute("ALTER TABLE users DROP COLUMN IF EXISTS bonus_streak")
 
 
+@step("Add telegram_user_id column to models (links catalog to Telegram account)")
+def add_telegram_user_id_to_models(cursor):
+    cursor.execute(
+        "ALTER TABLE models ADD COLUMN IF NOT EXISTS telegram_user_id BIGINT DEFAULT NULL"
+    )
+
+
+@step("Create index on models(telegram_user_id)")
+def create_models_tg_uid_index(cursor):
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_models_tg_uid ON models(telegram_user_id)"
+    )
+
+
+@step("Create model_withdrawals table")
+def create_model_withdrawals(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS model_withdrawals (
+            id             SERIAL PRIMARY KEY,
+            model_user_id  BIGINT NOT NULL,
+            amount_usd     REAL NOT NULL,
+            ltc_address    TEXT NOT NULL,
+            status         TEXT DEFAULT 'pending',
+            notes          TEXT,
+            created_at     BIGINT,
+            processed_at   BIGINT
+        )
+    """)
+
+
 def run_migration():
     print("=" * 55)
     print("  Miss Moldova v2 — Database Migration")

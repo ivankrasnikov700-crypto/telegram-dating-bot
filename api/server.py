@@ -4,6 +4,7 @@
 import hmac
 import hashlib
 import json
+import os
 import time
 import urllib.parse
 
@@ -25,6 +26,10 @@ from database.chat_sessions import (
 
 app = FastAPI(docs_url=None, redoc_url=None)
 
+MINI_APP_DEV = os.environ.get("MINI_APP_DEV", "0") == "1"
+if MINI_APP_DEV:
+    print("[API] ⚠️  MINI_APP_DEV mode enabled — auth validation skipped!")
+
 
 # ─────────────────────────────────────────────
 # Auth
@@ -32,6 +37,8 @@ app = FastAPI(docs_url=None, redoc_url=None)
 
 def _validate_init_data(init_data: str) -> dict | None:
     """Validate Telegram WebApp initData via HMAC-SHA256."""
+    if MINI_APP_DEV:
+        return {"id": 999999, "first_name": "DevUser", "username": "devuser"}
     try:
         parsed = dict(urllib.parse.parse_qsl(init_data, keep_blank_values=True))
         hash_val = parsed.pop("hash", "")
@@ -46,6 +53,8 @@ def _validate_init_data(init_data: str) -> dict | None:
 
 
 def _auth(authorization: str | None) -> dict:
+    if MINI_APP_DEV:
+        return {"id": 999999, "first_name": "DevUser", "username": "devuser"}
     if not authorization or not authorization.startswith("tma "):
         raise HTTPException(status_code=401, detail="Unauthorized")
     user = _validate_init_data(authorization[4:])
@@ -96,20 +105,22 @@ def get_model_detail(model_id: int, authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail="Not found")
     media = get_all_media(model_id)
     fan_id = int(user["id"])
-    active = get_active_chat(fan_id, model_id)
+    tg_uid = m.get("telegram_user_id")
+    active = get_active_chat(fan_id, tg_uid) if tg_uid else None
     hours_left = 0
     if active:
         hours_left = max(0, (int(active["expires_at"]) - int(time.time())) // 3600)
     photos = [x["file_id"] for x in media if x.get("media_type") == "photo"]
     return {
-        "id":             m["id"],
-        "name":           m["name"],
-        "age":            m.get("age"),
-        "description":    m.get("description") or "",
-        "preview_photo":  m.get("preview_photo"),
-        "photos":         photos,
+        "id":              m["id"],
+        "name":            m["name"],
+        "age":             m.get("age"),
+        "description":     m.get("description") or "",
+        "preview_photo":   m.get("preview_photo"),
+        "photos":          photos,
+        "available":       bool(tg_uid),
         "has_active_chat": bool(active),
-        "hours_left":     hours_left,
+        "hours_left":      hours_left,
     }
 
 
@@ -120,8 +131,12 @@ async def start_chat(request: Request, authorization: str = Header(None)):
     model_id = body.get("model_id")
     if not model_id:
         raise HTTPException(status_code=400, detail="model_id required")
+    m = get_model(int(model_id))
+    tg_uid = m.get("telegram_user_id") if m else None
+    if not tg_uid:
+        raise HTTPException(status_code=503, detail="Model not available yet")
     try:
-        result = activate_day_chat(int(user["id"]), int(model_id))
+        result = activate_day_chat(int(user["id"]), tg_uid)
         return {"ok": True, "expires_at": result["expires_at"]}
     except InsufficientBalanceError:
         raise HTTPException(status_code=402, detail="Insufficient balance")

@@ -285,6 +285,12 @@
       color: var(--success);
       cursor: default;
     }
+    .btn-action.soon {
+      background: rgba(112,132,153,0.15);
+      border: 1.5px solid rgba(112,132,153,0.35);
+      color: var(--muted);
+      cursor: default;
+    }
     .btn-action:disabled { opacity: 0.6; cursor: wait; }
 
     .balance-low {
@@ -487,8 +493,9 @@ function renderGrid(models) {
 
 async function openProfile(modelId) {
   tg.HapticFeedback.impactOccurred('light');
-  currentModelId  = modelId;
-  currentHasChat  = false;
+  currentModelId   = modelId;
+  currentHasChat   = false;
+  currentAvailable = true;
   document.getElementById('p-name').textContent = '...';
   document.getElementById('p-age').textContent  = '';
   document.getElementById('p-bio').textContent  = '';
@@ -502,7 +509,8 @@ async function openProfile(modelId) {
     const res = await get(`/api/models/${modelId}`);
     if (!res.ok) throw new Error('not found');
     const m = await res.json();
-    currentHasChat = m.has_active_chat;
+    currentHasChat   = m.has_active_chat;
+    currentAvailable = m.available !== false;
 
     document.getElementById('p-name').textContent = m.name;
     document.getElementById('p-age').textContent  = m.age ? `${m.age} лет` : '';
@@ -530,7 +538,9 @@ async function openProfile(modelId) {
       ? photos.map((_, i) => `<div class="dot${i === 0 ? ' active' : ''}"></div>`).join('')
       : '';
 
-    if (m.has_active_chat) {
+    if (!m.available) {
+      setBtnSoon();
+    } else if (m.has_active_chat) {
       setBtnActive(m.hours_left || 24);
     } else {
       setBtnBuy();
@@ -552,6 +562,12 @@ function setBtnActive(hours) {
   b.className = 'btn-action active-chat';
   b.disabled  = true;
   b.textContent = `✅ Чат активен — ещё ${hours}ч`;
+}
+function setBtnSoon() {
+  const b = document.getElementById('btn-chat');
+  b.className = 'btn-action soon';
+  b.disabled  = true;
+  b.textContent = '⏳ Скоро откроется';
 }
 
 function closeSheet() {
@@ -579,8 +595,10 @@ function moveGallery(dir) {
 
 // ── Start chat ────────────────────────────────────────────
 
+let currentAvailable = true;
+
 async function startChat() {
-  if (currentHasChat) return;
+  if (!currentAvailable || currentHasChat) return;
   const btn = document.getElementById('btn-chat');
   btn.disabled  = true;
   btn.textContent = '⏳ Подождите...';
