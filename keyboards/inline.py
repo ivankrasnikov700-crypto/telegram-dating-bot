@@ -2,6 +2,7 @@
 # Все inline-клавиатуры бота
 
 from telebot import types
+from config import MINI_APP_URL
 
 EXCHANGE_ADMIN = "Viktoria11051"
 LEI_RATE = 20
@@ -9,9 +10,15 @@ LEI_RATE = 20
 
 def get_main_menu() -> types.InlineKeyboardMarkup:
     markup = types.InlineKeyboardMarkup(row_width=1)
+    if MINI_APP_URL:
+        girls_btn = types.InlineKeyboardButton(
+            "👭 Девушки", web_app=types.WebAppInfo(url=MINI_APP_URL)
+        )
+    else:
+        girls_btn = types.InlineKeyboardButton("👭 Девушки", callback_data="girls")
     markup.add(
         types.InlineKeyboardButton("💵 Пополнить баланс", callback_data="topup_balance"),
-        types.InlineKeyboardButton("👭 Девушки",          callback_data="girls"),
+        girls_btn,
         types.InlineKeyboardButton("⭐ Отзывы",           callback_data="reviews"),
         types.InlineKeyboardButton("👑 VIP Клуб",         callback_data="vip_club"),
         types.InlineKeyboardButton("👤 Мой профиль",      callback_data="my_profile"),

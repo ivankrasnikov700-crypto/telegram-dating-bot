@@ -1,0 +1,638 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0">
+  <title>Miss Moldova</title>
+  <script src="https://telegram.org/js/telegram-web-app.js"></script>
+  <style>
+    :root {
+      --bg:       #17212b;
+      --card:     #242f3d;
+      --accent:   #5288c1;
+      --text:     #e8f0f7;
+      --muted:    #708499;
+      --success:  #4fba74;
+      --danger:   #e05252;
+      --radius:   14px;
+    }
+
+    * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      min-height: 100vh;
+      overscroll-behavior: none;
+    }
+
+    /* ── Header ─────────────────────────────── */
+    .header {
+      background: linear-gradient(160deg, #1c2d3e 0%, #121c28 100%);
+      padding: 14px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+      box-shadow: 0 1px 12px rgba(0,0,0,0.5);
+    }
+    .header-title {
+      font-size: 17px;
+      font-weight: 700;
+      letter-spacing: 0.3px;
+      background: linear-gradient(90deg, #d0e8ff, #8ab4e8);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    .balance-pill {
+      background: rgba(82,136,193,0.18);
+      border: 1px solid rgba(82,136,193,0.35);
+      border-radius: 20px;
+      padding: 5px 14px;
+      font-size: 13px;
+      font-weight: 600;
+      color: #9fc8f0;
+      transition: background 0.2s;
+    }
+
+    /* ── Grid ───────────────────────────────── */
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(2, 1fr);
+      gap: 10px;
+      padding: 14px;
+    }
+
+    /* ── Card ───────────────────────────────── */
+    .card {
+      background: var(--card);
+      border-radius: var(--radius);
+      overflow: hidden;
+      cursor: pointer;
+      position: relative;
+      transition: transform 0.12s ease, box-shadow 0.12s ease;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+    }
+    .card:active { transform: scale(0.96); box-shadow: none; }
+
+    .card-photo-wrap {
+      position: relative;
+      width: 100%;
+      aspect-ratio: 3/4;
+      overflow: hidden;
+      background: #1a2535;
+    }
+    .card-photo {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      transition: opacity 0.3s;
+    }
+    .card-photo.loading { opacity: 0; }
+    .card-placeholder {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 38px;
+    }
+    .card-gradient {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      height: 60%;
+      background: linear-gradient(to top, rgba(0,0,0,0.75), transparent);
+    }
+    .card-overlay {
+      position: absolute;
+      bottom: 0; left: 0; right: 0;
+      padding: 10px 10px 12px;
+    }
+    .card-name {
+      font-weight: 700;
+      font-size: 15px;
+      line-height: 1.2;
+      text-shadow: 0 1px 4px rgba(0,0,0,0.6);
+    }
+    .card-age {
+      color: rgba(255,255,255,0.75);
+      font-size: 12px;
+      margin-top: 1px;
+    }
+    .active-badge {
+      position: absolute;
+      top: 8px; right: 8px;
+      background: var(--success);
+      border-radius: 20px;
+      padding: 3px 8px;
+      font-size: 10px;
+      font-weight: 700;
+      color: #fff;
+      letter-spacing: 0.2px;
+    }
+
+    /* ── Modal Overlay ──────────────────────── */
+    .overlay {
+      position: fixed;
+      inset: 0;
+      z-index: 200;
+      background: rgba(0,0,0,0.65);
+      backdrop-filter: blur(6px);
+      -webkit-backdrop-filter: blur(6px);
+      display: none;
+      align-items: flex-end;
+      justify-content: center;
+    }
+    .overlay.open { display: flex; }
+
+    .sheet {
+      background: var(--card);
+      border-radius: 22px 22px 0 0;
+      width: 100%;
+      max-width: 600px;
+      max-height: 92vh;
+      overflow-y: auto;
+      overscroll-behavior: contain;
+      animation: slideUp 0.28s cubic-bezier(0.34, 1.2, 0.64, 1);
+    }
+    @keyframes slideUp {
+      from { transform: translateY(100%); opacity: 0; }
+      to   { transform: translateY(0);    opacity: 1; }
+    }
+
+    /* ── Gallery ────────────────────────────── */
+    .gallery {
+      position: relative;
+      overflow: hidden;
+      touch-action: pan-y;
+      background: #131e29;
+    }
+    .gallery-track {
+      display: flex;
+      transition: transform 0.3s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+      will-change: transform;
+    }
+    .gallery-slide {
+      flex: 0 0 100%;
+      min-width: 0;
+    }
+    .gallery-slide img {
+      width: 100%;
+      height: 310px;
+      object-fit: cover;
+      display: block;
+    }
+    .gallery-slide .gallery-placeholder {
+      height: 310px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 56px;
+      background: linear-gradient(135deg, #1a2535, #242f3d);
+    }
+
+    .gallery-dots {
+      position: absolute;
+      bottom: 10px;
+      left: 0; right: 0;
+      display: flex;
+      justify-content: center;
+      gap: 5px;
+    }
+    .dot {
+      height: 5px;
+      background: rgba(255,255,255,0.4);
+      border-radius: 3px;
+      transition: all 0.25s ease;
+      width: 5px;
+    }
+    .dot.active {
+      background: #fff;
+      width: 16px;
+    }
+
+    .btn-close {
+      position: absolute;
+      top: 12px; right: 12px;
+      width: 32px; height: 32px;
+      background: rgba(0,0,0,0.45);
+      border: none;
+      border-radius: 50%;
+      color: #fff;
+      font-size: 16px;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 10;
+      backdrop-filter: blur(4px);
+    }
+
+    /* ── Profile Body ───────────────────────── */
+    .profile-body {
+      padding: 20px 20px 28px;
+    }
+    .profile-head {
+      display: flex;
+      align-items: baseline;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .profile-name {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+    }
+    .profile-age {
+      font-size: 16px;
+      color: var(--muted);
+      font-weight: 500;
+    }
+    .profile-bio {
+      color: #93afc8;
+      line-height: 1.6;
+      font-size: 14px;
+      margin-bottom: 22px;
+      min-height: 20px;
+    }
+
+    /* ── Chat Button ────────────────────────── */
+    .btn-action {
+      display: block;
+      width: 100%;
+      padding: 15px;
+      border: none;
+      border-radius: 14px;
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+      letter-spacing: 0.2px;
+    }
+    .btn-action:active:not(:disabled) { transform: scale(0.98); }
+    .btn-action.buy {
+      background: linear-gradient(135deg, #5288c1 0%, #3a6fa8 100%);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(82,136,193,0.35);
+    }
+    .btn-action.active-chat {
+      background: rgba(79,186,116,0.15);
+      border: 1.5px solid rgba(79,186,116,0.5);
+      color: var(--success);
+      cursor: default;
+    }
+    .btn-action:disabled { opacity: 0.6; cursor: wait; }
+
+    .balance-low {
+      margin-top: 10px;
+      text-align: center;
+      font-size: 13px;
+      color: var(--muted);
+      display: none;
+    }
+
+    /* ── Toast ──────────────────────────────── */
+    .toast {
+      position: fixed;
+      bottom: 28px;
+      left: 50%;
+      transform: translateX(-50%) translateY(60px);
+      background: #2c3e50;
+      color: #fff;
+      padding: 11px 22px;
+      border-radius: 24px;
+      font-size: 13px;
+      font-weight: 500;
+      box-shadow: 0 4px 20px rgba(0,0,0,0.5);
+      white-space: nowrap;
+      z-index: 999;
+      transition: transform 0.3s cubic-bezier(0.34, 1.2, 0.64, 1);
+      pointer-events: none;
+    }
+    .toast.visible { transform: translateX(-50%) translateY(0); }
+    .toast.success { background: #1e3a28; color: #6ddb97; }
+    .toast.error   { background: #3a1e1e; color: #f08080; }
+
+    /* ── States ─────────────────────────────── */
+    .loader {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 65vh;
+      gap: 14px;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .spin {
+      width: 36px; height: 36px;
+      border: 3px solid rgba(82,136,193,0.18);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.75s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    .empty-state {
+      text-align: center;
+      padding: 70px 24px;
+      color: var(--muted);
+    }
+    .empty-icon { font-size: 52px; margin-bottom: 14px; }
+    .empty-title { font-size: 16px; font-weight: 600; color: #9ab; margin-bottom: 6px; }
+    .empty-sub   { font-size: 14px; }
+  </style>
+</head>
+<body>
+
+<div class="header">
+  <span class="header-title">👑 Miss Moldova</span>
+  <span class="balance-pill" id="balance-el">$0.00</span>
+</div>
+
+<div id="content">
+  <div class="loader"><div class="spin"></div><span>Загрузка...</span></div>
+</div>
+
+<!-- Profile sheet -->
+<div class="overlay" id="overlay" onclick="onOverlayClick(event)">
+  <div class="sheet" id="sheet">
+    <div class="gallery" id="gallery">
+      <button class="btn-close" onclick="closeSheet()">✕</button>
+      <div class="gallery-track" id="gallery-track"></div>
+      <div class="gallery-dots" id="gallery-dots"></div>
+    </div>
+    <div class="profile-body">
+      <div class="profile-head">
+        <div class="profile-name" id="p-name"></div>
+        <div class="profile-age"  id="p-age"></div>
+      </div>
+      <div class="profile-bio" id="p-bio"></div>
+      <button class="btn-action buy" id="btn-chat" onclick="startChat()">
+        💬 Начать чат ($5 / 24ч)
+      </button>
+      <div class="balance-low" id="balance-low">
+        Пополни баланс в боте — нужно $5
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const tg = window.Telegram.WebApp;
+tg.ready();
+tg.expand();
+
+const AUTH = tg.initData ? `tma ${tg.initData}` : null;
+
+let userBalance = 0;
+let currentModelId = null;
+let currentHasChat = false;
+let gSlides = [];
+let gIndex  = 0;
+let gTouchX = 0;
+
+// ── Fetch helpers ────────────────────────────────────────
+
+async function get(path) {
+  return fetch(path, {headers: {Authorization: AUTH}});
+}
+async function post(path, body) {
+  return fetch(path, {
+    method: 'POST',
+    headers: {Authorization: AUTH, 'Content-Type': 'application/json'},
+    body: JSON.stringify(body),
+  });
+}
+
+// ── Init ─────────────────────────────────────────────────
+
+async function init() {
+  if (!AUTH) {
+    document.getElementById('content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">🔒</div>
+        <div class="empty-title">Открой через Telegram</div>
+        <div class="empty-sub">Mini App работает только внутри Telegram</div>
+      </div>`;
+    return;
+  }
+  try {
+    const [meR, modelsR] = await Promise.all([get('/api/me'), get('/api/models')]);
+    if (!meR.ok || !modelsR.ok) throw new Error('API error');
+    const me     = await meR.json();
+    const models = await modelsR.json();
+    userBalance = me.balance_usd || 0;
+    document.getElementById('balance-el').textContent = `$${userBalance.toFixed(2)}`;
+    renderGrid(models);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-title">Ошибка загрузки</div>
+        <div class="empty-sub">Проверь соединение и попробуй снова</div>
+      </div>`;
+  }
+}
+
+// ── Grid ─────────────────────────────────────────────────
+
+function renderGrid(models) {
+  if (!models || !models.length) {
+    document.getElementById('content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">💫</div>
+        <div class="empty-title">Скоро появятся новые анкеты</div>
+        <div class="empty-sub">Следи за обновлениями</div>
+      </div>`;
+    return;
+  }
+  const html = models.map(m => `
+    <div class="card" onclick="openProfile(${m.id})" data-id="${m.id}">
+      <div class="card-photo-wrap">
+        <div class="card-placeholder" id="ph-${m.id}">💄</div>
+        ${m.preview_photo
+          ? `<img class="card-photo loading" id="img-${m.id}" alt="${esc(m.name)}">`
+          : ''}
+        <div class="card-gradient"></div>
+        <div class="card-overlay">
+          <div class="card-name">${esc(m.name)}</div>
+          ${m.age ? `<div class="card-age">${m.age} лет</div>` : ''}
+        </div>
+      </div>
+    </div>`).join('');
+  document.getElementById('content').innerHTML = `<div class="grid">${html}</div>`;
+
+  // Load photos lazily
+  models.forEach(m => {
+    if (!m.preview_photo) return;
+    const img = document.getElementById(`img-${m.id}`);
+    if (!img) return;
+    img.onload = () => {
+      img.classList.remove('loading');
+      const ph = document.getElementById(`ph-${m.id}`);
+      if (ph) ph.style.display = 'none';
+    };
+    img.src = `/api/photo/${encodeURIComponent(m.preview_photo)}`;
+  });
+}
+
+// ── Profile sheet ─────────────────────────────────────────
+
+async function openProfile(modelId) {
+  tg.HapticFeedback.impactOccurred('light');
+  currentModelId  = modelId;
+  currentHasChat  = false;
+  document.getElementById('p-name').textContent = '...';
+  document.getElementById('p-age').textContent  = '';
+  document.getElementById('p-bio').textContent  = '';
+  document.getElementById('gallery-track').innerHTML = '<div class="gallery-slide"><div class="gallery-placeholder">💄</div></div>';
+  document.getElementById('gallery-dots').innerHTML  = '';
+  document.getElementById('overlay').classList.add('open');
+  document.getElementById('balance-low').style.display = 'none';
+  setBtnBuy();
+
+  try {
+    const res = await get(`/api/models/${modelId}`);
+    if (!res.ok) throw new Error('not found');
+    const m = await res.json();
+    currentHasChat = m.has_active_chat;
+
+    document.getElementById('p-name').textContent = m.name;
+    document.getElementById('p-age').textContent  = m.age ? `${m.age} лет` : '';
+    document.getElementById('p-bio').textContent  = m.description || '';
+
+    // Build photo list
+    const photos = [];
+    if (m.preview_photo) photos.push(m.preview_photo);
+    (m.photos || []).forEach(p => { if (p && p !== m.preview_photo) photos.push(p); });
+    if (!photos.length) photos.push(null);
+
+    gSlides = photos;
+    gIndex  = 0;
+
+    const track = document.getElementById('gallery-track');
+    track.style.transform = 'translateX(0)';
+    track.innerHTML = photos.map(fid =>
+      fid
+        ? `<div class="gallery-slide"><img src="/api/photo/${encodeURIComponent(fid)}" alt="" loading="lazy"></div>`
+        : `<div class="gallery-slide"><div class="gallery-placeholder">💄</div></div>`
+    ).join('');
+
+    const dots = document.getElementById('gallery-dots');
+    dots.innerHTML = photos.length > 1
+      ? photos.map((_, i) => `<div class="dot${i === 0 ? ' active' : ''}"></div>`).join('')
+      : '';
+
+    if (m.has_active_chat) {
+      setBtnActive(m.hours_left || 24);
+    } else {
+      setBtnBuy();
+    }
+  } catch (e) {
+    closeSheet();
+    showToast('Ошибка загрузки профиля', 'error');
+  }
+}
+
+function setBtnBuy() {
+  const b = document.getElementById('btn-chat');
+  b.className = 'btn-action buy';
+  b.disabled  = false;
+  b.textContent = '💬 Начать чат ($5 / 24ч)';
+}
+function setBtnActive(hours) {
+  const b = document.getElementById('btn-chat');
+  b.className = 'btn-action active-chat';
+  b.disabled  = true;
+  b.textContent = `✅ Чат активен — ещё ${hours}ч`;
+}
+
+function closeSheet() {
+  document.getElementById('overlay').classList.remove('open');
+}
+function onOverlayClick(e) {
+  if (e.target === document.getElementById('overlay')) closeSheet();
+}
+
+// ── Gallery swipe ─────────────────────────────────────────
+
+const gallery = document.getElementById('gallery');
+gallery.addEventListener('touchstart', e => { gTouchX = e.touches[0].clientX; }, {passive: true});
+gallery.addEventListener('touchend', e => {
+  const dx = e.changedTouches[0].clientX - gTouchX;
+  if (Math.abs(dx) > 35) moveGallery(dx < 0 ? 1 : -1);
+}, {passive: true});
+
+function moveGallery(dir) {
+  gIndex = Math.max(0, Math.min(gSlides.length - 1, gIndex + dir));
+  document.getElementById('gallery-track').style.transform = `translateX(-${gIndex * 100}%)`;
+  document.querySelectorAll('.dot').forEach((d, i) => d.classList.toggle('active', i === gIndex));
+  tg.HapticFeedback.selectionChanged();
+}
+
+// ── Start chat ────────────────────────────────────────────
+
+async function startChat() {
+  if (currentHasChat) return;
+  const btn = document.getElementById('btn-chat');
+  btn.disabled  = true;
+  btn.textContent = '⏳ Подождите...';
+
+  try {
+    const res = await post('/api/chats/start', {model_id: currentModelId});
+    if (res.ok) {
+      currentHasChat = true;
+      userBalance = Math.max(0, userBalance - 5);
+      document.getElementById('balance-el').textContent = `$${userBalance.toFixed(2)}`;
+      setBtnActive(24);
+      tg.HapticFeedback.notificationOccurred('success');
+      showToast('Чат открыт! Напиши модели прямо в бот 💬', 'success');
+    } else if (res.status === 402) {
+      setBtnBuy();
+      document.getElementById('balance-low').style.display = 'block';
+      tg.HapticFeedback.notificationOccurred('error');
+      showToast('Пополни баланс — нужно минимум $5', 'error');
+    } else if (res.status === 409) {
+      currentHasChat = true;
+      setBtnActive(24);
+      showToast('Чат уже активен', 'success');
+    } else {
+      setBtnBuy();
+      showToast('Ошибка. Попробуй ещё раз', 'error');
+    }
+  } catch (e) {
+    setBtnBuy();
+    showToast('Ошибка соединения', 'error');
+  }
+}
+
+// ── Toast ─────────────────────────────────────────────────
+
+let _toastTimer;
+function showToast(msg, type = '') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = `toast ${type}`;
+  void el.offsetWidth;
+  el.classList.add('visible');
+  clearTimeout(_toastTimer);
+  _toastTimer = setTimeout(() => el.classList.remove('visible'), 3200);
+}
+
+// ── Utils ─────────────────────────────────────────────────
+
+function esc(s) {
+  return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+init();
+</script>
+</body>
+</html>

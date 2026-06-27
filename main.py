@@ -2,6 +2,8 @@
 # Точка входа — инициализация БД, запуск планировщика, запуск бота
 
 import logging
+import os
+import threading
 import telebot
 import time
 from config import BOT_TOKEN, LTC_ADDRESS, ADMIN_IDS, DATABASE_URL
@@ -73,6 +75,19 @@ def main():
 
     start_scheduler(bot)
     restore_pending_payments(bot)
+
+    # Start Mini App API server in background thread
+    def _start_api():
+        try:
+            import uvicorn
+            from api.server import app as fastapi_app
+            port = int(os.environ.get("PORT", 8080))
+            print("[API] Mini App server starting on port " + str(port))
+            uvicorn.run(fastapi_app, host="0.0.0.0", port=port, log_level="warning")
+        except Exception as e:
+            print("[API] Failed to start: " + str(e))
+
+    threading.Thread(target=_start_api, daemon=True).start()
 
     print("✅ Бот Miss Moldova запущен!")
     print("💳 LTC: " + str(LTC_ADDRESS))
