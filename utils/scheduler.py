@@ -17,7 +17,7 @@ _UTC_OFFSET_HOURS = 3
 
 
 def start_scheduler(bot):
-    """Запускает три фоновых треда: подписки, статистика, анонсы сессий."""
+    """Запускает четыре фоновых треда: подписки, статистика, анонсы, очистка чатов."""
     threading.Thread(
         target=_subscription_loop,
         args=(bot,),
@@ -37,6 +37,13 @@ def start_scheduler(bot):
         args=(bot,),
         daemon=True,
         name="SessionAnnouncer"
+    ).start()
+
+    threading.Thread(
+        target=_chat_expiry_loop,
+        args=(bot,),
+        daemon=True,
+        name="ChatExpiry"
     ).start()
 
     print("[SCHEDULER] Запущен. Статистика каждый день в "
@@ -308,6 +315,23 @@ def reset_notification_flag(user_id: int):
         print("[SCHEDULER] Ошибка reset_flag: " + str(e))
     finally:
         conn.close()
+
+
+# ─────────────────────────────────────────────
+# Очистка истёкших чатов (каждые 10 минут)
+# ─────────────────────────────────────────────
+
+def _chat_expiry_loop(bot):
+    """Помечает истёкшие чаты как is_active=0 каждые 10 минут."""
+    while True:
+        try:
+            from database.chat_sessions import expire_old_chats
+            expired_count = expire_old_chats()
+            if expired_count:
+                print("[CHAT EXPIRY] Закрыто истёкших чатов: " + str(expired_count))
+        except Exception as e:
+            print("[CHAT EXPIRY ERROR] " + str(e))
+        time.sleep(10 * 60)
 
 
 # ─────────────────────────────────────────────

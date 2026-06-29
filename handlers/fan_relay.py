@@ -63,12 +63,44 @@ def _is_fan_with_active_chat(message) -> bool:
         return False
 
 
+def _is_fan_without_active_chat(message) -> bool:
+    """True if a registered non-banned fan sends text but has NO active chats."""
+    if not message.text or message.text.startswith('/'):
+        return False
+    try:
+        user = get_user(message.from_user.id)
+        if not user:
+            return False
+        if user.get("user_role") != "fan":
+            return False
+        if user.get("is_banned", 0):
+            return False
+        chats = get_fan_active_chats(message.from_user.id)
+        return len(chats) == 0
+    except Exception:
+        return False
+
+
 def register_fan_relay_handlers(bot):
     """
     Registers:
     1. Message handler — intercepts all text from fans with active chats
-    2. Callback handler — model selector when fan has multiple active chats
+    2. Message handler — notifies fan when they write but chat has expired
+    3. Callback handler — model selector when fan has multiple active chats
     """
+
+    @bot.message_handler(
+        content_types=['text'],
+        func=lambda msg: _is_fan_without_active_chat(msg)
+    )
+    def fan_no_chat_notify(message):
+        from keyboards.inline import get_main_menu
+        bot.send_message(
+            message.chat.id,
+            "⏰ У тебя нет активных чатов.\n\n"
+            "Открой чат с моделью через 👭 Девушки",
+            reply_markup=get_main_menu()
+        )
 
     @bot.message_handler(
         content_types=['text'],
