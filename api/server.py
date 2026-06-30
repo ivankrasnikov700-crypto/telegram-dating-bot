@@ -20,7 +20,7 @@ from bot_instance import bot as _webhook_bot
 from database import register_user, get_usd_balance, get_user, get_connection, _cur, ban_user, unban_user, add_usd_balance
 from database.models import (
     get_all_models, get_model, get_all_media, get_model_by_telegram_id,
-    add_model, set_preview_photo, add_model_media, link_model_telegram,
+    add_model, set_preview_photo, add_model_media,
 )
 from database.chat_sessions import (
     activate_day_chat,
@@ -91,11 +91,18 @@ def get_me(authorization: str = Header(None)):
     db_user = get_user(uid)
     balance = get_usd_balance(uid)
     chats = get_fan_active_chats(uid)
+    role = db_user.get("user_role", "fan") if db_user else "fan"
+    if role != "model" and get_model_by_telegram_id(uid):
+        role = "model"
+        conn = get_connection()
+        conn.cursor().execute("UPDATE users SET user_role = 'model' WHERE user_id = %s", (uid,))
+        conn.commit()
+        conn.close()
     return {
         "user_id": uid,
         "balance_usd": round(float(balance), 2),
         "active_chats": len(chats),
-        "user_role": db_user.get("user_role", "fan") if db_user else "fan",
+        "user_role": role,
         "is_admin": uid in ADMIN_IDS,
     }
 
@@ -105,10 +112,9 @@ def model_dashboard(authorization: str = Header(None)):
     user = _auth(authorization)
     uid = int(user["id"])
     db_user = get_user(uid)
-    if not db_user or db_user.get("user_role") != "model":
-        raise HTTPException(status_code=403, detail="Not a model")
-
     model_profile = get_model_by_telegram_id(uid)
+    if not model_profile:
+        raise HTTPException(status_code=403, detail="Not a model")
     chats = get_model_active_chats(uid)
     now = int(time.time())
 
@@ -168,11 +174,15 @@ async def fan_send_message(model_id: int, request: Request, authorization: str =
     content = (body.get("text") or "").strip()[:2000]
     if not content:
         raise HTTPException(status_code=400, detail="Empty message")
+    model = get_model(model_id)
+    tg_uid = model.get("telegram_user_id") if model else None
+    if not tg_uid:
+        raise HTTPException(status_code=403, detail="Model not available")
     conn = get_connection(); cur = _cur(conn)
     try:
         cur.execute(
             "SELECT chat_id FROM model_chats WHERE fan_id=%s AND model_id=%s AND is_active=1 AND expires_at>%s",
-            (fan_id, model_id, int(time.time()))
+            (fan_id, tg_uid, int(time.time()))
         )
         row = cur.fetchone()
         if not row:
@@ -191,11 +201,15 @@ async def fan_send_message(model_id: int, request: Request, authorization: str =
 def fan_get_messages(model_id: int, since: int = 0, authorization: str = Header(None)):
     user = _auth(authorization)
     fan_id = int(user["id"])
+    model = get_model(model_id)
+    tg_uid = model.get("telegram_user_id") if model else None
+    if not tg_uid:
+        return []
     conn = get_connection(); cur = _cur(conn)
     try:
         cur.execute(
             "SELECT chat_id FROM model_chats WHERE fan_id=%s AND model_id=%s AND is_active=1 AND expires_at>%s",
-            (fan_id, model_id, int(time.time()))
+            (fan_id, tg_uid, int(time.time()))
         )
         row = cur.fetchone()
         if not row:
@@ -220,14 +234,9 @@ async def model_send_message(fan_id: int, request: Request, authorization: str =
         raise HTTPException(status_code=400, detail="Empty message")
     conn = get_connection(); cur = _cur(conn)
     try:
-        cur.execute("SELECT id FROM models WHERE telegram_user_id=%s AND is_active=1", (model_user_id,))
-        mrow = cur.fetchone()
-        if not mrow:
-            raise HTTPException(status_code=403, detail="Not a model")
-        model_id = mrow["id"]
         cur.execute(
             "SELECT chat_id FROM model_chats WHERE fan_id=%s AND model_id=%s AND is_active=1 AND expires_at>%s",
-            (fan_id, model_id, int(time.time()))
+            (fan_id, model_user_id, int(time.time()))
         )
         row = cur.fetchone()
         if not row:
@@ -248,14 +257,9 @@ def model_get_messages(fan_id: int, since: int = 0, authorization: str = Header(
     model_user_id = int(user["id"])
     conn = get_connection(); cur = _cur(conn)
     try:
-        cur.execute("SELECT id FROM models WHERE telegram_user_id=%s AND is_active=1", (model_user_id,))
-        mrow = cur.fetchone()
-        if not mrow:
-            return []
-        model_id = mrow["id"]
         cur.execute(
             "SELECT chat_id FROM model_chats WHERE fan_id=%s AND model_id=%s AND is_active=1 AND expires_at>%s",
-            (fan_id, model_id, int(time.time()))
+            (fan_id, model_user_id, int(time.time()))
         )
         row = cur.fetchone()
         if not row:
@@ -675,21 +679,22 @@ async def admin_link_model_tg(model_id: int, request: Request, authorization: st
     m = get_model(model_id)
     if not m:
         raise HTTPException(status_code=404, detail="Model not found")
+    conn = get_connection()
     try:
-        link_model_telegram(model_id, tg_uid)
-        # Set user_role = model
-        conn = get_connection()
         cursor = conn.cursor()
+        cursor.execute("UPDATE models SET telegram_user_id = %s WHERE id = %s", (tg_uid, model_id))
         cursor.execute(
             "INSERT INTO users (user_id, user_role, created_at) VALUES (%s, 'model', %s) "
             "ON CONFLICT (user_id) DO UPDATE SET user_role = 'model'",
             (tg_uid, int(time.time()))
         )
         conn.commit()
-        conn.close()
         return {"ok": True}
     except Exception as e:
+        conn.rollback()
         raise HTTPException(status_code=500, detail=str(e))
+    finally:
+        conn.close()
 
 
 @app.get("/api/admin/models/{model_id}/chats")
