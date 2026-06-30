@@ -1070,6 +1070,11 @@ function renderModelDashboard(data) {
           <div class="stat-label">За 30 дней</div>
           <div class="stat-value">$${data.monthly_earnings.toFixed(2)}</div>
         </div>
+        ${(data.pending_withdrawal_usd || 0) > 0 ? `
+        <div class="stat-card">
+          <div class="stat-label">На рассмотрении</div>
+          <div class="stat-value" style="color:var(--muted)">$${(data.pending_withdrawal_usd).toFixed(2)}</div>
+        </div>` : ''}
       </div>
 
       <button class="btn-withdraw" onclick="doWithdraw()">💸 Вывести средства</button>

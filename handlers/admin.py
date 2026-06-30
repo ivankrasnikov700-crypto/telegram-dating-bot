@@ -610,7 +610,7 @@ def register_admin_handlers(bot):
             "👤 Модель: " + str(req["model_user_id"]) + "\n"
             "💵 Сумма: $" + str(round(req["amount_usd"], 2)) + "\n"
             "📝 Причина: " + reason + "\n\n"
-            "Баланс модели НЕ списан."
+            "Баланс модели возвращён."
         )
         try:
             bot.send_message(

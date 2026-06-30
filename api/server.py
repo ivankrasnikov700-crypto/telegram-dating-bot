@@ -189,6 +189,12 @@ def model_dashboard(authorization: str = Header(None)):
             (uid, since),
         )
         monthly = round(float(cursor.fetchone()["total"]), 2)
+        cursor.execute(
+            "SELECT COALESCE(SUM(amount_usd), 0) AS frozen FROM model_withdrawals "
+            "WHERE model_user_id = %s AND status = 'pending'",
+            (uid,),
+        )
+        pending_wd = round(float(cursor.fetchone()["frozen"]), 2)
     finally:
         conn.close()
 
@@ -196,6 +202,7 @@ def model_dashboard(authorization: str = Header(None)):
         "name": model_profile["name"] if model_profile else (db_user.get("full_name") or "Модель"),
         "balance_usd": round(float(get_usd_balance(uid)), 2),
         "monthly_earnings": monthly,
+        "pending_withdrawal_usd": pending_wd,
         "active_chats": chats_data,
         "profile": {
             "preview_photo": model_profile["preview_photo"] if model_profile else None,
