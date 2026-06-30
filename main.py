@@ -14,6 +14,7 @@ from database.settings import init_settings_db
 from database.schedule import init_schedule_db
 from database.withdrawals import init_withdrawals_db
 from database.paid_media import init_paid_media_db
+from database.chat_sessions import init_chat_sessions_db
 
 logging.basicConfig(
     level=logging.INFO,
@@ -68,6 +69,7 @@ def main():
     init_schedule_db()
     init_withdrawals_db()
     init_paid_media_db()
+    init_chat_sessions_db()
     add_scheduler_columns()
 
     register_start_handlers(bot)

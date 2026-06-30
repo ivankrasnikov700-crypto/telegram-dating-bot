@@ -1161,29 +1161,32 @@ async function switchAdminTab(tab) {
   await loadAdminTab(tab);
 }
 
+async function apiJson(r) {
+  if (r.ok) return r.json();
+  let msg;
+  try { msg = (await r.json()).detail; } catch { msg = await r.text(); }
+  throw new Error('[' + r.status + '] ' + (msg || 'Server error'));
+}
+
 async function loadAdminTab(tab) {
   try {
-    let r, data;
+    let r;
     switch (tab) {
       case 'overview':
         r = await get('/api/admin/stats');
-        if (!r.ok) throw new Error((await r.json()).detail || 'error');
-        renderAdminOverview(await r.json());
+        renderAdminOverview(await apiJson(r));
         break;
       case 'models':
         r = await get('/api/admin/models');
-        if (!r.ok) throw new Error((await r.json()).detail || 'error');
-        renderAdminModels(await r.json());
+        renderAdminModels(await apiJson(r));
         break;
       case 'withdrawals':
         r = await get('/api/admin/withdrawals');
-        if (!r.ok) throw new Error((await r.json()).detail || 'error');
-        renderAdminWithdrawals(await r.json());
+        renderAdminWithdrawals(await apiJson(r));
         break;
       case 'fans':
         r = await get('/api/admin/users');
-        if (!r.ok) throw new Error((await r.json()).detail || 'error');
-        renderAdminUsers(await r.json());
+        renderAdminUsers(await apiJson(r));
         break;
     }
   } catch (e) {

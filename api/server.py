@@ -261,6 +261,9 @@ def admin_stats(authorization: str = Header(None)):
             """
         )
         fan_spend_total = float(cursor.fetchone()["total"])
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
 
@@ -299,6 +302,9 @@ def admin_models_list(authorization: str = Header(None)):
             (now,),
         )
         rows = cursor.fetchall()
+    except Exception as e:
+        conn.close()
+        raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
 

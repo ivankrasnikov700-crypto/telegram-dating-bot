@@ -6,6 +6,40 @@ MODEL_SHARE    = 0.70   # 70% модели
 PLATFORM_SHARE = 0.30   # 30% платформе
 
 
+def init_chat_sessions_db():
+    """Ensure model_chats and balance_transactions tables exist."""
+    conn = get_connection()
+    cursor = conn.cursor()
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS model_chats (
+            chat_id    TEXT PRIMARY KEY,
+            fan_id     BIGINT NOT NULL,
+            model_id   BIGINT NOT NULL,
+            expires_at BIGINT NOT NULL,
+            is_active  INTEGER DEFAULT 1,
+            created_at BIGINT NOT NULL
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_chats_model ON model_chats (model_id, is_active)"
+    )
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_model_chats_fan ON model_chats (fan_id, is_active)"
+    )
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS balance_transactions (
+            id         SERIAL PRIMARY KEY,
+            user_id    BIGINT NOT NULL,
+            amount_usd REAL NOT NULL,
+            reason     TEXT NOT NULL,
+            created_at BIGINT NOT NULL
+        )
+    """)
+    conn.commit()
+    conn.close()
+    print("[DB] model_chats + balance_transactions tables ready")
+
+
 class InsufficientBalanceError(Exception):
     pass
 
