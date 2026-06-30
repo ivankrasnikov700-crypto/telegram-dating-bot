@@ -13,6 +13,7 @@ from database.withdrawals import (
     request_withdrawal,
     get_model_withdrawals,
 )
+from utils.cryptobot import is_configured as _cp_configured
 
 # FSM state storage: {user_id: {"step": ..., "amount": ..., "address": ...}}
 _withdraw_state: dict = {}
@@ -177,15 +178,32 @@ def register_model_dashboard_handlers(bot):
             return
 
         _withdraw_state[uid] = {"step": "amount", "balance": balance}
-        bot.send_message(
-            message.chat.id,
-            "💸 *Запрос на вывод*\n\n"
-            "Твой баланс: *$" + str(round(balance, 2)) + "*\n"
-            "Минимальная сумма: $" + str(int(MIN_WITHDRAWAL_USD)) + "\n\n"
-            "Введи сумму для вывода (например: 15.00):\n\n"
-            "/cancel — отменить",
-            parse_mode="Markdown"
-        )
+
+        if _cp_configured():
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                types.InlineKeyboardButton("💎 CryptoBot (авто)", callback_data="wd_method_crypto"),
+                types.InlineKeyboardButton("₿ LTC-адрес",         callback_data="wd_method_ltc"),
+            )
+            bot.send_message(
+                message.chat.id,
+                "💸 *Запрос на вывод*\n\n"
+                "Твой баланс: *$" + str(round(balance, 2)) + "*\n"
+                "Минимальная сумма: $" + str(int(MIN_WITHDRAWAL_USD)) + "\n\n"
+                "Выбери способ получения выплаты:",
+                parse_mode="Markdown",
+                reply_markup=markup,
+            )
+        else:
+            bot.send_message(
+                message.chat.id,
+                "💸 *Запрос на вывод*\n\n"
+                "Твой баланс: *$" + str(round(balance, 2)) + "*\n"
+                "Минимальная сумма: $" + str(int(MIN_WITHDRAWAL_USD)) + "\n\n"
+                "Введи сумму для вывода (например: 15.00):\n\n"
+                "/cancel — отменить",
+                parse_mode="Markdown"
+            )
 
     @bot.message_handler(commands=['cancel'], func=lambda m: m.from_user.id in _withdraw_state)
     def cancel_withdraw(message):
@@ -219,16 +237,37 @@ def register_model_dashboard_handlers(bot):
             return
 
         state["amount"] = amount
-        state["step"]   = "address"
         _withdraw_state[uid] = state
-        bot.send_message(
-            message.chat.id,
-            "✅ Сумма: *$" + str(amount) + "*\n\n"
-            "Теперь введи свой LTC-адрес:\n"
-            "(начинается с ltc1, L или M)\n\n"
-            "/cancel — отменить",
-            parse_mode="Markdown"
-        )
+
+        if state.get("method") == "crypto":
+            # Skip address step for CryptoBot
+            state["step"] = "confirm"
+            _withdraw_state[uid] = state
+            markup = types.InlineKeyboardMarkup(row_width=2)
+            markup.add(
+                types.InlineKeyboardButton("✅ Подтвердить", callback_data="wd_confirm"),
+                types.InlineKeyboardButton("❌ Отмена",      callback_data="wd_cancel"),
+            )
+            bot.send_message(
+                message.chat.id,
+                "📋 *Проверь данные:*\n\n"
+                "💵 Сумма: *$" + str(amount) + "*\n"
+                "💎 Способ: CryptoBot (авто USDT)\n\n"
+                "Всё верно?",
+                reply_markup=markup,
+                parse_mode="Markdown",
+            )
+        else:
+            state["step"] = "address"
+            _withdraw_state[uid] = state
+            bot.send_message(
+                message.chat.id,
+                "✅ Сумма: *$" + str(amount) + "*\n\n"
+                "Теперь введи свой LTC-адрес:\n"
+                "(начинается с ltc1, L или M)\n\n"
+                "/cancel — отменить",
+                parse_mode="Markdown",
+            )
 
     @bot.message_handler(
         func=lambda m: _is_model(m) and _withdraw_state.get(m.from_user.id, {}).get("step") == "address"
@@ -265,6 +304,28 @@ def register_model_dashboard_handlers(bot):
             parse_mode="Markdown"
         )
 
+    @bot.callback_query_handler(func=lambda c: c.data in ("wd_method_crypto", "wd_method_ltc"))
+    def withdraw_method_callback(call):
+        bot.answer_callback_query(call.id)
+        uid   = call.from_user.id
+        state = _withdraw_state.get(uid, {})
+        if not state:
+            return
+        if call.data == "wd_method_crypto":
+            state["method"] = "crypto"
+            state["address"] = None
+        else:
+            state["method"] = "ltc"
+        _withdraw_state[uid] = state
+        bot.edit_message_text(
+            "💸 *Запрос на вывод*\n\n"
+            "Введи сумму для вывода (например: 15.00):\n\n"
+            "/cancel — отменить",
+            call.message.chat.id,
+            call.message.message_id,
+            parse_mode="Markdown"
+        )
+
     @bot.callback_query_handler(func=lambda c: c.data in ("wd_confirm", "wd_cancel"))
     def withdraw_confirm_callback(call):
         bot.answer_callback_query(call.id)
@@ -285,40 +346,63 @@ def register_model_dashboard_handlers(bot):
         if state.get("step") != "confirm":
             return
 
+        method  = state.get("method", "ltc")
+        address = state.get("address")
+
         try:
-            req_id = request_withdrawal(uid, state["amount"], state["address"])
+            req_id = request_withdrawal(
+                uid, state["amount"],
+                ltc_address=address,
+                asset="USDT" if method == "crypto" else "LTC",
+            )
         except Exception as e:
             bot.send_message(uid, "❌ Ошибка при создании заявки: " + str(e))
             return
 
-        try:
-            bot.edit_message_text(
+        if method == "crypto":
+            confirm_text = (
                 "✅ Заявка на вывод #" + str(req_id) + " отправлена!\n\n"
                 "Сумма: *$" + str(state["amount"]) + "*\n"
-                "Адрес: `" + state["address"] + "`\n\n"
-                "Администратор обработает её в течение 24 часов.",
-                call.message.chat.id,
-                call.message.message_id,
-                parse_mode="Markdown"
+                "Способ: 💎 CryptoBot (автоматически)\n\n"
+                "Администратор одобрит заявку — USDT придут в @CryptoBot."
             )
-        except Exception:
-            bot.send_message(
-                uid,
-                "✅ Заявка #" + str(req_id) + " на $" + str(state["amount"]) + " отправлена!"
+        else:
+            confirm_text = (
+                "✅ Заявка на вывод #" + str(req_id) + " отправлена!\n\n"
+                "Сумма: *$" + str(state["amount"]) + "*\n"
+                "Адрес: `" + (address or "") + "`\n\n"
+                "Администратор обработает её в течение 24 часов."
             )
 
+        try:
+            bot.edit_message_text(confirm_text, call.message.chat.id,
+                                  call.message.message_id, parse_mode="Markdown")
+        except Exception:
+            bot.send_message(uid, confirm_text, parse_mode="Markdown")
+
         # Notify all admins
-        notify_text = (
-            "💸 Запрос на вывод!\n"
-            "━━━━━━━━━━━━━━━\n"
-            "🆔 Заявка #" + str(req_id) + "\n"
-            "👤 Модель: " + str(uid) + "\n"
-            "💵 Сумма: $" + str(state["amount"]) + "\n"
-            "📬 LTC: " + state["address"] + "\n\n"
-            "Команды:\n"
-            "/approve " + str(req_id) + "  — одобрить\n"
-            "/reject " + str(req_id) + " причина — отклонить"
-        )
+        if method == "crypto":
+            notify_text = (
+                "💸 Запрос на вывод (CryptoBot авто)!\n"
+                "━━━━━━━━━━━━━━━\n"
+                "🆔 Заявка #" + str(req_id) + "\n"
+                "👤 Модель: " + str(uid) + "\n"
+                "💵 Сумма: $" + str(state["amount"]) + "\n"
+                "💎 USDT → CryptoBot (авто при одобрении)\n\n"
+                "Одобри в Mini App Admin → Выводы"
+            )
+        else:
+            notify_text = (
+                "💸 Запрос на вывод!\n"
+                "━━━━━━━━━━━━━━━\n"
+                "🆔 Заявка #" + str(req_id) + "\n"
+                "👤 Модель: " + str(uid) + "\n"
+                "💵 Сумма: $" + str(state["amount"]) + "\n"
+                "📬 LTC: " + (address or "?") + "\n\n"
+                "Команды:\n"
+                "/approve " + str(req_id) + "  — одобрить\n"
+                "/reject " + str(req_id) + " причина — отклонить"
+            )
         for admin_id in ADMIN_IDS:
             try:
                 bot.send_message(admin_id, notify_text)

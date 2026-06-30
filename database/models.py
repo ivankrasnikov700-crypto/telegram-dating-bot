@@ -79,6 +79,7 @@ def init_models_db():
     conn.commit()
     _migrate_add_birth_date(cursor, conn)
     _migrate_add_preview_photo_2(cursor, conn)
+    _migrate_add_telegram_user_id(cursor, conn)
     conn.close()
     print("[DB] Таблицы моделей инициализированы")
 
@@ -102,6 +103,21 @@ def _migrate_add_preview_photo_2(cursor, conn):
         print("[DB] Миграция: preview_photo_2 OK")
     except Exception as e:
         print("[DB] Миграция preview_photo_2: " + str(e))
+
+
+def _migrate_add_telegram_user_id(cursor, conn):
+    try:
+        cursor.execute(
+            "ALTER TABLE models ADD COLUMN IF NOT EXISTS telegram_user_id BIGINT DEFAULT NULL"
+        )
+        cursor.execute(
+            "CREATE INDEX IF NOT EXISTS idx_models_tg_uid ON models (telegram_user_id)"
+        )
+        conn.commit()
+        print("[DB] Миграция: telegram_user_id OK")
+    except Exception as e:
+        conn.rollback()
+        print("[DB] Миграция telegram_user_id: " + str(e))
 
 
 def add_model(name: str, age_or_birthdate, username: str, description: str) -> int:

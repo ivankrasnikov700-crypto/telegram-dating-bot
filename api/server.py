@@ -8,14 +8,19 @@ import os
 import time
 import urllib.parse
 
+import io
 import requests as req_lib
-from fastapi import FastAPI, HTTPException, Header, Request
+import telebot as _telebot
+from fastapi import FastAPI, HTTPException, Header, Request, UploadFile, File, Form
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import BOT_TOKEN, ADMIN_IDS
-from database import register_user, get_usd_balance, get_user, get_connection, _cur, ban_user, unban_user
-from database.models import get_all_models, get_model, get_all_media, get_model_by_telegram_id
+from database import register_user, get_usd_balance, get_user, get_connection, _cur, ban_user, unban_user, add_usd_balance
+from database.models import (
+    get_all_models, get_model, get_all_media, get_model_by_telegram_id,
+    add_model, set_preview_photo, add_model_media, link_model_telegram,
+)
 from database.chat_sessions import (
     activate_day_chat,
     get_active_chat,
@@ -25,6 +30,7 @@ from database.chat_sessions import (
     ActiveChatExistsError,
 )
 from database.withdrawals import get_pending_withdrawals, get_withdrawal, process_withdrawal
+from utils.cryptobot import is_configured as _cp_configured, create_invoice, get_invoice, transfer as cp_transfer, usd_to_asset
 
 app = FastAPI(docs_url=None, redoc_url=None)
 
@@ -351,7 +357,25 @@ def admin_approve_withdrawal(wid: int, authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail="Not found")
     if w["status"] != "pending":
         raise HTTPException(status_code=409, detail="Already processed: " + w["status"])
-    result = process_withdrawal(wid, "paid", "Approved via Mini App admin")
+
+    notes = "Approved via Mini App admin"
+    # CryptoBot auto-transfer if no LTC address
+    if not w.get("ltc_address") and _cp_configured():
+        asset = w.get("asset") or "USDT"
+        try:
+            crypto_amount = usd_to_asset(float(w["amount_usd"]), asset)
+            cp_transfer(
+                user_id=int(w["model_user_id"]),
+                asset=asset,
+                amount=crypto_amount,
+                spend_id="withdrawal_" + str(wid),
+                comment="Withdrawal #" + str(wid) + " — Miss Moldova",
+            )
+            notes = "Auto CryptoBot transfer: " + str(crypto_amount) + " " + asset
+        except Exception as e:
+            raise HTTPException(status_code=502, detail="CryptoBot transfer failed: " + str(e))
+
+    result = process_withdrawal(wid, "paid", notes)
     if not result:
         raise HTTPException(status_code=500, detail="Processing failed")
     return {"ok": True}
@@ -417,6 +441,200 @@ def admin_unban_user(uid: int, authorization: str = Header(None)):
         raise HTTPException(status_code=404, detail="User not found")
     unban_user(uid)
     return {"ok": True}
+
+
+# ─────────────────────────────────────────────
+# Admin: Model Management
+# ─────────────────────────────────────────────
+
+@app.post("/api/admin/models")
+async def admin_create_model(request: Request, authorization: str = Header(None)):
+    _admin_auth(authorization)
+    body = await request.json()
+    name = (body.get("name") or "").strip()
+    age  = body.get("age") or "0"
+    desc = (body.get("description") or "").strip()
+    if not name:
+        raise HTTPException(status_code=400, detail="name required")
+    try:
+        model_id = add_model(name, str(age), "", desc)
+        return {"ok": True, "model_id": model_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/models/{model_id}/upload")
+async def admin_upload_model_photo(
+    model_id: int,
+    authorization: str = Header(None),
+    file: UploadFile = File(...),
+    photo_type: str = Form("preview"),
+):
+    _admin_auth(authorization)
+    m = get_model(model_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Model not found")
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
+    try:
+        bot = _telebot.TeleBot(BOT_TOKEN)
+        admin_id = ADMIN_IDS[0]
+        msg = bot.send_photo(admin_id, io.BytesIO(data))
+        file_id = msg.photo[-1].file_id
+        try:
+            bot.delete_message(admin_id, msg.message_id)
+        except Exception:
+            pass
+        if photo_type == "preview":
+            set_preview_photo(model_id, file_id)
+        elif photo_type == "preview2":
+            from database.models import set_preview_photo_2
+            set_preview_photo_2(model_id, file_id)
+        else:
+            is_prev = 1 if photo_type == "preview_media" else 0
+            add_model_media(model_id, file_id, "photo", is_prev, 0)
+        return {"ok": True, "file_id": file_id}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/admin/models/{model_id}/link")
+async def admin_link_model_tg(model_id: int, request: Request, authorization: str = Header(None)):
+    _admin_auth(authorization)
+    body = await request.json()
+    tg_uid = body.get("telegram_user_id")
+    if not tg_uid:
+        raise HTTPException(status_code=400, detail="telegram_user_id required")
+    tg_uid = int(tg_uid)
+    m = get_model(model_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Model not found")
+    try:
+        link_model_telegram(model_id, tg_uid)
+        # Set user_role = model
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO users (user_id, user_role, created_at) VALUES (%s, 'model', %s) "
+            "ON CONFLICT (user_id) DO UPDATE SET user_role = 'model'",
+            (tg_uid, int(time.time()))
+        )
+        conn.commit()
+        conn.close()
+        return {"ok": True}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/api/admin/models/{model_id}/chats")
+def admin_model_chats(model_id: int, authorization: str = Header(None)):
+    _admin_auth(authorization)
+    m = get_model(model_id)
+    if not m:
+        raise HTTPException(status_code=404, detail="Model not found")
+    tg_uid = m.get("telegram_user_id")
+    if not tg_uid:
+        return {"model_id": model_id, "chats": [], "linked": False}
+    now   = int(time.time())
+    chats = get_model_active_chats(int(tg_uid))
+    result = []
+    for c in chats:
+        fan = get_user(c["fan_id"])
+        fan_name = (
+            "@" + fan["username"] if fan and fan.get("username")
+            else (fan.get("full_name") or "Фанат #" + str(c["fan_id"])) if fan
+            else "Фанат #" + str(c["fan_id"])
+        )
+        remaining = max(0, int(c["expires_at"]) - now)
+        result.append({
+            "fan_id":       c["fan_id"],
+            "fan_name":     fan_name,
+            "hours_left":   remaining // 3600,
+            "minutes_left": (remaining % 3600) // 60,
+            "expires_at":   c["expires_at"],
+        })
+    return {"model_id": model_id, "chats": result, "linked": True}
+
+
+# ─────────────────────────────────────────────
+# CryptoBot: Fan top-up
+# ─────────────────────────────────────────────
+
+@app.post("/api/topup/cryptobot")
+async def topup_cryptobot(request: Request, authorization: str = Header(None)):
+    user = _auth(authorization)
+    uid  = int(user["id"])
+    if not _cp_configured():
+        raise HTTPException(status_code=503, detail="CryptoBot not configured")
+    body   = await request.json()
+    amount = float(body.get("amount_usd", 0))
+    if amount not in (10, 25, 50):
+        raise HTTPException(status_code=400, detail="amount_usd must be 10, 25 or 50")
+    register_user(uid, user.get("username", ""), user.get("first_name", ""))
+    try:
+        invoice = create_invoice(
+            asset="USDT",
+            amount=amount,
+            description="Miss Moldova balance top-up $" + str(int(amount)),
+            payload=str(uid) + ":" + str(int(time.time())),
+        )
+        # Persist invoice for polling
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO cryptobot_invoices (invoice_id, user_id, amount_usd, created_at) "
+            "VALUES (%s, %s, %s, %s) ON CONFLICT (invoice_id) DO NOTHING",
+            (invoice["invoice_id"], uid, amount, int(time.time()))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail="CryptoBot error: " + str(e))
+    return {
+        "ok":        True,
+        "pay_url":   invoice["bot_invoice_url"],
+        "invoice_id": invoice["invoice_id"],
+        "amount_usd": amount,
+    }
+
+
+@app.get("/api/topup/cryptobot/{invoice_id}/status")
+def topup_cryptobot_status(invoice_id: int, authorization: str = Header(None)):
+    user = _auth(authorization)
+    uid  = int(user["id"])
+    if not _cp_configured():
+        raise HTTPException(status_code=503, detail="CryptoBot not configured")
+    try:
+        inv = get_invoice(invoice_id)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail="CryptoBot error: " + str(e))
+    if not inv:
+        raise HTTPException(status_code=404, detail="Invoice not found")
+
+    status = inv.get("status")
+    if status == "paid":
+        # Check if already credited
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT credited FROM cryptobot_invoices WHERE invoice_id = %s AND user_id = %s",
+            (invoice_id, uid)
+        )
+        row = cursor.fetchone()
+        if row and not row[0]:
+            cursor.execute(
+                "UPDATE cryptobot_invoices SET credited = TRUE WHERE invoice_id = %s",
+                (invoice_id,)
+            )
+            conn.commit()
+            conn.close()
+            amount_usd = float(inv.get("amount", 0))
+            add_usd_balance(uid, amount_usd, "CryptoBot top-up invoice #" + str(invoice_id))
+        else:
+            conn.close()
+
+    return {"status": status, "invoice_id": invoice_id}
 
 
 @app.get("/api/photo/{file_id:path}")

@@ -82,6 +82,16 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS cryptobot_invoices (
+            invoice_id   BIGINT PRIMARY KEY,
+            user_id      BIGINT NOT NULL,
+            amount_usd   REAL NOT NULL,
+            credited     BOOLEAN DEFAULT FALSE,
+            created_at   BIGINT NOT NULL
+        )
+    ''')
+
     conn.commit()
     conn.close()
     print("[DB] База данных инициализирована (PostgreSQL)")

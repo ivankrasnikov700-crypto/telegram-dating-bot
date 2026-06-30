@@ -15,7 +15,8 @@ def init_withdrawals_db():
             id             SERIAL PRIMARY KEY,
             model_user_id  BIGINT NOT NULL,
             amount_usd     REAL NOT NULL,
-            ltc_address    TEXT NOT NULL,
+            ltc_address    TEXT,
+            asset          TEXT DEFAULT 'USDT',
             status         TEXT DEFAULT 'pending',
             notes          TEXT,
             created_at     BIGINT,
@@ -30,21 +31,38 @@ def init_withdrawals_db():
         "CREATE INDEX IF NOT EXISTS idx_mw_model "
         "ON model_withdrawals (model_user_id)"
     )
+    # Migrate existing table: make ltc_address nullable and add asset column
+    try:
+        cursor.execute(
+            "ALTER TABLE model_withdrawals ALTER COLUMN ltc_address DROP NOT NULL"
+        )
+    except Exception:
+        pass
+    try:
+        cursor.execute(
+            "ALTER TABLE model_withdrawals ADD COLUMN IF NOT EXISTS asset TEXT DEFAULT 'USDT'"
+        )
+    except Exception:
+        pass
     conn.commit()
     conn.close()
     print("[DB] model_withdrawals table ready")
 
 
-def request_withdrawal(model_user_id: int, amount_usd: float, ltc_address: str) -> int:
-    """Creates a withdrawal request. Returns the new request id."""
+def request_withdrawal(model_user_id: int, amount_usd: float,
+                       ltc_address: str = None, asset: str = "USDT") -> int:
+    """Creates a withdrawal request. Returns the new request id.
+    Pass ltc_address=None for CryptoBot auto-transfer."""
     conn = get_connection()
     cursor = conn.cursor()
     cursor.execute('''
         INSERT INTO model_withdrawals
-            (model_user_id, amount_usd, ltc_address, status, created_at)
-        VALUES (%s, %s, %s, 'pending', %s)
+            (model_user_id, amount_usd, ltc_address, asset, status, created_at)
+        VALUES (%s, %s, %s, %s, 'pending', %s)
         RETURNING id
-    ''', (model_user_id, round(amount_usd, 2), ltc_address.strip(), int(time.time())))
+    ''', (model_user_id, round(amount_usd, 2),
+          ltc_address.strip() if ltc_address else None,
+          asset, int(time.time())))
     new_id = cursor.fetchone()[0]
     conn.commit()
     conn.close()

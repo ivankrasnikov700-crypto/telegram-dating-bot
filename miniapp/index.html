@@ -1233,18 +1233,19 @@ function renderAdminOverview(d) {
           <span class="revenue-value secondary">$${d.platform_revenue_total.toFixed(2)}</span>
         </div>
       </div>
-      <button class="admin-add-btn" onclick="doAddModel()">➕ Добавить модель</button>
+      <button class="admin-add-btn" onclick="switchAdminTab('models')">➕ Добавить модель</button>
     </div>`;
 }
 
 function renderAdminModels(models) {
+  const addBtn = `<button class="admin-add-btn" onclick="showAddModelWizard()" style="margin-bottom:12px;">➕ Добавить модель</button>`;
   if (!models || !models.length) {
     document.getElementById('admin-content').innerHTML =
-      '<div class="empty-state"><div class="empty-icon">👩</div><div class="empty-title">Нет моделей</div><div class="empty-sub">Добавь первую через /admin в боте</div></div>';
+      `<div class="admin-body">${addBtn}<div class="empty-state" style="margin-top:8px;"><div class="empty-icon">👩</div><div class="empty-title">Нет моделей</div></div></div>`;
     return;
   }
   const html = models.map(m => `
-    <div class="admin-model-card">
+    <div class="admin-model-card" onclick="showModelDetail(${m.id})" style="cursor:pointer;">
       <div class="model-thumb-wrap">
         ${m.preview_photo
           ? `<img class="model-thumb" src="/api/photo/${encodeURIComponent(m.preview_photo)}" alt="" loading="lazy">`
@@ -1259,16 +1260,68 @@ function renderAdminModels(models) {
         </div>
         <div class="model-stats-row">
           <span>💬 ${m.active_chats} чат(ов)</span>
-          <span>💰 $${m.total_earnings.toFixed(2)} earned</span>
+          <span>💰 $${m.total_earnings.toFixed(2)}</span>
         </div>
         <div class="model-stats-row">
-          <span>💵 Баланс: $${m.balance_usd.toFixed(2)}</span>
-          ${m.telegram_user_id ? `<span>ID: ${m.telegram_user_id}</span>` : ''}
+          <span>💵 $${m.balance_usd.toFixed(2)}</span>
+          ${m.telegram_user_id ? `<span style="color:var(--muted);font-size:11px;">ID: ${m.telegram_user_id}</span>` : ''}
         </div>
       </div>
     </div>`).join('');
   document.getElementById('admin-content').innerHTML =
-    `<div class="admin-body" style="display:flex;flex-direction:column;gap:10px;">${html}</div>`;
+    `<div class="admin-body">${addBtn}<div style="display:flex;flex-direction:column;gap:10px;">${html}</div></div>`;
+}
+
+async function showModelDetail(modelId) {
+  tg.HapticFeedback.selectionChanged();
+  document.getElementById('admin-content').innerHTML =
+    '<div class="loader"><div class="spin"></div><span>Загрузка чатов...</span></div>';
+  try {
+    const r = await get(`/api/admin/models/${modelId}/chats`);
+    const d = await apiJson(r);
+    let chatsHtml = '';
+    if (!d.linked) {
+      chatsHtml = '<div class="empty-sub">Модель не привязана к Telegram</div>';
+    } else if (!d.chats.length) {
+      chatsHtml = '<div class="empty-sub">Нет активных чатов</div>';
+    } else {
+      chatsHtml = d.chats.map(c => `
+        <div class="wd-header" style="padding:10px 0;border-bottom:1px solid var(--border);">
+          <span style="font-weight:600;">${esc(c.fan_name)}</span>
+          <span style="color:var(--success);">⏱ ${c.hours_left}ч ${c.minutes_left}м</span>
+        </div>`).join('');
+    }
+    document.getElementById('admin-content').innerHTML = `
+      <div class="admin-body">
+        <button class="btn-sm btn-muted" onclick="switchAdminTab('models')" style="margin-bottom:12px;">← Назад</button>
+        <div class="section-title" style="margin-bottom:12px;">💬 Активные чаты</div>
+        ${chatsHtml}
+        ${d.linked ? '' : `
+          <div style="margin-top:16px;">
+            <div class="section-title" style="margin-bottom:8px;">Привязать Telegram ID</div>
+            <input id="link-tg-id" class="amount-input" type="number" placeholder="Telegram user_id" style="width:100%;margin-bottom:8px;">
+            <button class="btn-primary" onclick="linkModelTg(${modelId})">🔗 Привязать</button>
+          </div>`}
+      </div>`;
+  } catch(e) {
+    document.getElementById('admin-content').innerHTML =
+      `<div class="admin-body"><button class="btn-sm btn-muted" onclick="switchAdminTab('models')" style="margin-bottom:12px;">← Назад</button><div class="empty-sub">${esc(String(e.message))}</div></div>`;
+  }
+}
+
+async function linkModelTg(modelId) {
+  const tgId = document.getElementById('link-tg-id')?.value?.trim();
+  if (!tgId || isNaN(Number(tgId))) { showToast('Введи корректный ID', 'error'); return; }
+  tg.HapticFeedback.impactOccurred('medium');
+  try {
+    const r = await post(`/api/admin/models/${modelId}/link`, {telegram_user_id: Number(tgId)});
+    await apiJson(r);
+    showToast('✅ Привязано!', 'success');
+    tg.HapticFeedback.notificationOccurred('success');
+    await switchAdminTab('models');
+  } catch(e) {
+    showToast('❌ ' + e.message, 'error');
+  }
 }
 
 function renderAdminWithdrawals(withdrawals) {
@@ -1288,9 +1341,9 @@ function renderAdminWithdrawals(withdrawals) {
           <span class="wd-date">${date}</span>
         </div>
         <div class="wd-amount">$${w.amount_usd.toFixed(2)}</div>
-        <div class="wd-ltc">${esc(w.ltc_address)}</div>
+        <div class="wd-ltc">${w.ltc_address ? esc(w.ltc_address) : '<span style="color:var(--accent)">💎 CryptoBot авто</span>'}</div>
         <div class="action-row" id="wd-actions-${w.id}">
-          <button class="btn-sm btn-approve" onclick="approveWithdrawal(${w.id})">✅ Одобрить</button>
+          <button class="btn-sm btn-approve" id="wd-approve-btn-${w.id}" onclick="approveWithdrawal(${w.id})">✅ Одобрить</button>
           <button class="btn-sm btn-reject"  onclick="showRejectForm(${w.id})">❌ Отклонить</button>
         </div>
         <div id="wd-reject-form-${w.id}" style="display:none;margin-top:10px;">
@@ -1341,16 +1394,19 @@ function renderAdminUsers(users) {
 // ── Withdrawal actions ────────────────────────────────────
 
 async function approveWithdrawal(id) {
+  const btn = document.getElementById('wd-approve-btn-' + id);
+  if (btn) { btn.disabled = true; btn.textContent = '⏳ Перевод...'; }
   tg.HapticFeedback.impactOccurred('medium');
-  const r = await post(`/api/admin/withdrawals/${id}/approve`, {});
-  if (r.ok) {
+  try {
+    const r = await post(`/api/admin/withdrawals/${id}/approve`, {});
+    await apiJson(r);
     document.getElementById('wd-' + id)?.remove();
     showToast('✅ Заявка #' + id + ' одобрена!', 'success');
     tg.HapticFeedback.notificationOccurred('success');
     if (!document.querySelector('[id^="wd-"]')) renderAdminWithdrawals([]);
-  } else {
-    const d = await r.json();
-    showToast('❌ ' + (d.detail || 'Ошибка'), 'error');
+  } catch(e) {
+    showToast('❌ ' + e.message, 'error');
+    if (btn) { btn.disabled = false; btn.textContent = '✅ Одобрить'; }
   }
 }
 
@@ -1413,15 +1469,180 @@ async function unbanUser(uid) {
   }
 }
 
-function doAddModel() {
-  tg.showPopup({
-    title: 'Добавление модели',
-    message: 'Используй /admin в боте — там запустится пошаговый визард:\nфото → описание → привязка аккаунта.',
-    buttons: [
-      {id: 'open', type: 'default', text: 'Открыть бот'},
-      {id: 'cancel', type: 'cancel'},
-    ],
-  }, (btnId) => { if (btnId === 'open') tg.close(); });
+// ── Add Model Wizard ──────────────────────────────────────
+
+let _wizardModelId = null;
+let _wizardStep    = 0;
+
+function showAddModelWizard() {
+  _wizardModelId = null;
+  _wizardStep    = 0;
+  renderWizardStep();
+}
+
+function renderWizardStep() {
+  const steps = ['Данные', 'Фото 1', 'Фото 2', 'Медиа', 'TG ID'];
+  const prog  = steps.map((s, i) =>
+    `<span style="padding:3px 8px;border-radius:20px;font-size:11px;background:${i <= _wizardStep ? 'var(--accent)' : 'var(--border)'};color:${i <= _wizardStep ? '#fff' : 'var(--muted)'};">${s}</span>`
+  ).join('');
+
+  let content = '';
+  if (_wizardStep === 0) {
+    content = `
+      <div class="section-title" style="margin-bottom:12px;">Шаг 1: Данные модели</div>
+      <input id="wz-name" class="amount-input" placeholder="Имя модели" style="width:100%;margin-bottom:10px;">
+      <input id="wz-age"  class="amount-input" placeholder="Возраст (напр. 23) или дата ДД.ММ.ГГГГ" style="width:100%;margin-bottom:10px;">
+      <textarea id="wz-desc" class="reject-textarea" rows="3" placeholder="Описание (необязательно)..." style="width:100%;resize:vertical;margin-bottom:12px;"></textarea>
+      <button class="btn-primary" onclick="wizardStep0()">Далее →</button>`;
+  } else if (_wizardStep === 1) {
+    content = `
+      <div class="section-title" style="margin-bottom:8px;">Шаг 2: Главное фото (аватар)</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Это фото будет показываться в каталоге</div>
+      <input type="file" id="wz-photo1" accept="image/*" style="display:none;" onchange="wizardUploadPhoto(1)">
+      <div id="wz-photo1-preview" style="width:100%;height:160px;background:var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo1').click()">
+        <span style="color:var(--muted);">📷 Нажми чтобы выбрать фото</span>
+      </div>
+      <button class="btn-sm btn-muted" onclick="wizardSkipPhoto(1)">Пропустить →</button>`;
+  } else if (_wizardStep === 2) {
+    content = `
+      <div class="section-title" style="margin-bottom:8px;">Шаг 3: Второе фото</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Дополнительное фото профиля</div>
+      <input type="file" id="wz-photo2" accept="image/*" style="display:none;" onchange="wizardUploadPhoto(2)">
+      <div id="wz-photo2-preview" style="width:100%;height:160px;background:var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo2').click()">
+        <span style="color:var(--muted);">📷 Нажми чтобы выбрать фото</span>
+      </div>
+      <button class="btn-sm btn-muted" onclick="wizardSkipPhoto(2)">Пропустить →</button>`;
+  } else if (_wizardStep === 3) {
+    content = `
+      <div class="section-title" style="margin-bottom:8px;">Шаг 4: Медиа (галерея)</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Выбери несколько фото для галереи модели</div>
+      <input type="file" id="wz-media" accept="image/*" multiple style="display:none;" onchange="wizardUploadMedia()">
+      <div id="wz-media-list" style="display:flex;flex-wrap:wrap;gap:8px;margin-bottom:12px;min-height:60px;"></div>
+      <button class="btn-sm btn-muted" style="margin-bottom:10px;" onclick="document.getElementById('wz-media').click()">📁 Выбрать фото</button>
+      <br>
+      <button class="btn-primary" onclick="wizardStepNext()">Далее →</button>
+      <button class="btn-sm btn-muted" style="margin-top:8px;" onclick="wizardStepNext()">Пропустить →</button>`;
+  } else if (_wizardStep === 4) {
+    content = `
+      <div class="section-title" style="margin-bottom:8px;">Шаг 5: Telegram ID</div>
+      <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Попроси модель написать /start боту, затем узнай ID через @userinfobot</div>
+      <input id="wz-tgid" class="amount-input" type="number" placeholder="Telegram user_id" style="width:100%;margin-bottom:12px;">
+      <button class="btn-primary" onclick="wizardLinkTg()">🔗 Привязать и завершить</button>
+      <br>
+      <button class="btn-sm btn-muted" style="margin-top:8px;" onclick="wizardFinish()">Пропустить — привяжу позже</button>`;
+  }
+
+  document.getElementById('admin-content').innerHTML = `
+    <div class="admin-body">
+      <div style="display:flex;gap:4px;flex-wrap:wrap;margin-bottom:16px;">${prog}</div>
+      ${content}
+      ${_wizardStep > 0 ? `<div style="margin-top:12px;color:var(--muted);font-size:12px;">ID модели: ${_wizardModelId}</div>` : ''}
+    </div>`;
+}
+
+async function wizardStep0() {
+  const name = document.getElementById('wz-name')?.value?.trim();
+  const age  = document.getElementById('wz-age')?.value?.trim() || '0';
+  const desc = document.getElementById('wz-desc')?.value?.trim() || '';
+  if (!name) { showToast('Введи имя', 'error'); return; }
+  try {
+    const r = await post('/api/admin/models', {name, age, description: desc});
+    const d = await apiJson(r);
+    _wizardModelId = d.model_id;
+    _wizardStep = 1;
+    renderWizardStep();
+    showToast('✅ Модель создана #' + d.model_id, 'success');
+  } catch(e) {
+    showToast('❌ ' + e.message, 'error');
+  }
+}
+
+async function wizardUploadPhoto(num) {
+  const input   = document.getElementById('wz-photo' + num);
+  const preview = document.getElementById('wz-photo' + num + '-preview');
+  const file    = input?.files?.[0];
+  if (!file || !_wizardModelId) return;
+
+  const reader = new FileReader();
+  reader.onload = e => {
+    preview.innerHTML = `<img src="${e.target.result}" style="width:100%;height:100%;object-fit:cover;">`;
+  };
+  reader.readAsDataURL(file);
+
+  const type = num === 1 ? 'preview' : 'preview2';
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('photo_type', type);
+    const r = await fetch(`/api/admin/models/${_wizardModelId}/upload`, {
+      method: 'POST',
+      headers: {'Authorization': 'tma ' + tg.initData},
+      body: fd,
+    });
+    await apiJson(r);
+    showToast('✅ Фото загружено!', 'success');
+    setTimeout(() => { _wizardStep = num + 1; renderWizardStep(); }, 600);
+  } catch(e) {
+    showToast('❌ ' + e.message, 'error');
+  }
+}
+
+function wizardSkipPhoto(num) {
+  _wizardStep = num + 1;
+  renderWizardStep();
+}
+
+async function wizardUploadMedia() {
+  const input = document.getElementById('wz-media');
+  const list  = document.getElementById('wz-media-list');
+  if (!input?.files?.length || !_wizardModelId) return;
+  const files = Array.from(input.files);
+  for (const file of files) {
+    try {
+      const fd = new FormData();
+      fd.append('file', file);
+      fd.append('photo_type', 'media');
+      const r = await fetch(`/api/admin/models/${_wizardModelId}/upload`, {
+        method: 'POST',
+        headers: {'Authorization': 'tma ' + tg.initData},
+        body: fd,
+      });
+      await apiJson(r);
+      const url = URL.createObjectURL(file);
+      list.insertAdjacentHTML('beforeend',
+        `<div style="width:60px;height:60px;border-radius:8px;overflow:hidden;background:var(--border);">
+          <img src="${url}" style="width:100%;height:100%;object-fit:cover;">
+        </div>`);
+    } catch(e) {
+      showToast('❌ ' + e.message, 'error');
+    }
+  }
+  showToast('✅ Медиа загружено!', 'success');
+}
+
+function wizardStepNext() {
+  _wizardStep = 4;
+  renderWizardStep();
+}
+
+async function wizardLinkTg() {
+  const tgIdVal = document.getElementById('wz-tgid')?.value?.trim();
+  if (!tgIdVal || isNaN(Number(tgIdVal))) { showToast('Введи корректный TG ID', 'error'); return; }
+  try {
+    const r = await post(`/api/admin/models/${_wizardModelId}/link`, {telegram_user_id: Number(tgIdVal)});
+    await apiJson(r);
+    showToast('✅ Модель привязана!', 'success');
+    tg.HapticFeedback.notificationOccurred('success');
+    wizardFinish();
+  } catch(e) {
+    showToast('❌ ' + e.message, 'error');
+  }
+}
+
+function wizardFinish() {
+  _wizardModelId = null;
+  _wizardStep    = 0;
+  switchAdminTab('models');
 }
 
 // ── Toast ─────────────────────────────────────────────────
