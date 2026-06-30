@@ -105,6 +105,10 @@ def init_db():
     cursor.execute(
         'CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_id ON chat_messages(chat_id, created_at)'
     )
+    try:
+        cursor.execute("ALTER TABLE chat_messages ADD COLUMN IF NOT EXISTS media_id INTEGER")
+    except Exception:
+        conn.rollback()
 
     # Добавляем колонки, которые могли отсутствовать в ранних версиях БД
     for col, definition in [
