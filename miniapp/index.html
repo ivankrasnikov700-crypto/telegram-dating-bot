@@ -559,6 +559,174 @@
       left: 6px;
       color: var(--accent);
     }
+
+    /* ── Admin Panel ────────────────────── */
+    .admin-tabs {
+      display: flex;
+      gap: 6px;
+      padding: 12px 14px 12px;
+      overflow-x: auto;
+      scrollbar-width: none;
+      -webkit-overflow-scrolling: touch;
+      background: var(--bg);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
+    }
+    .admin-tabs::-webkit-scrollbar { display: none; }
+
+    .tab-btn {
+      flex-shrink: 0;
+      padding: 8px 16px;
+      border: none;
+      border-radius: 20px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      background: rgba(255,255,255,0.07);
+      color: var(--muted);
+      transition: background 0.18s, color 0.18s;
+      white-space: nowrap;
+    }
+    .tab-btn.active {
+      background: var(--accent);
+      color: #fff;
+    }
+
+    .admin-body { padding: 14px; }
+
+    .revenue-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 16px 18px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.2);
+      margin-top: 10px;
+    }
+    .revenue-row {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 6px 0;
+    }
+    .revenue-row + .revenue-row {
+      border-top: 1px solid rgba(255,255,255,0.06);
+      margin-top: 4px;
+      padding-top: 10px;
+    }
+    .revenue-label { font-size: 14px; color: var(--muted); }
+    .revenue-value { font-size: 20px; font-weight: 800; color: var(--success); }
+    .revenue-value.secondary { font-size: 16px; font-weight: 700; color: var(--text); }
+
+    .admin-add-btn {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      margin-top: 14px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(135deg, #5288c1 0%, #3a6fa8 100%);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(82,136,193,0.3);
+      transition: opacity 0.15s, transform 0.1s;
+      letter-spacing: 0.2px;
+    }
+    .admin-add-btn:active { transform: scale(0.98); }
+
+    .admin-model-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 14px;
+      display: flex;
+      gap: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .model-thumb-wrap {
+      width: 60px; height: 72px;
+      flex-shrink: 0;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #1a2535;
+    }
+    .model-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
+    .model-thumb-ph {
+      width: 100%; height: 100%;
+      display: flex; align-items: center; justify-content: center;
+      font-size: 24px;
+    }
+    .model-info { flex: 1; min-width: 0; }
+    .model-info-name { font-size: 15px; font-weight: 700; margin-bottom: 5px; }
+    .model-info-meta { margin-bottom: 6px; }
+    .model-stats-row {
+      display: flex; gap: 12px;
+      font-size: 12px; color: var(--muted);
+      margin-top: 4px;
+    }
+
+    .badge {
+      display: inline-block;
+      font-size: 11px; font-weight: 700;
+      border-radius: 10px; padding: 2px 8px;
+      white-space: nowrap;
+    }
+    .badge-ok   { background: rgba(79,186,116,0.15);  color: var(--success); border: 1px solid rgba(79,186,116,0.3); }
+    .badge-warn { background: rgba(224,82,82,0.12);   color: #e07070;        border: 1px solid rgba(224,82,82,0.25); }
+    .badge-err  { background: rgba(224,82,82,0.2);    color: #e05252;        border: 1px solid rgba(224,82,82,0.35); }
+    .badge-blue { background: rgba(82,136,193,0.14);  color: #9fc8f0;        border: 1px solid rgba(82,136,193,0.3); }
+
+    .admin-withdrawal-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 16px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .wd-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
+    .wd-id     { font-size: 12px; color: var(--muted); }
+    .wd-name   { font-size: 14px; font-weight: 700; flex: 1; }
+    .wd-date   { font-size: 11px; color: var(--muted); }
+    .wd-amount { font-size: 26px; font-weight: 800; color: var(--success); margin-bottom: 6px; }
+    .wd-ltc    {
+      font-size: 12px; color: var(--muted);
+      word-break: break-all; margin-bottom: 12px;
+      font-family: monospace; letter-spacing: 0.3px;
+    }
+
+    .action-row { display: flex; gap: 8px; }
+    .btn-sm {
+      flex: 1; padding: 10px 12px;
+      border: none; border-radius: 10px;
+      font-size: 13px; font-weight: 700;
+      cursor: pointer;
+      transition: opacity 0.15s, transform 0.1s;
+    }
+    .btn-sm:active { transform: scale(0.97); }
+    .btn-approve { background: rgba(79,186,116,0.18); color: var(--success); border: 1px solid rgba(79,186,116,0.35); }
+    .btn-reject  { background: rgba(224,82,82,0.14);  color: #e05252;        border: 1px solid rgba(224,82,82,0.3); }
+    .btn-muted   { background: rgba(255,255,255,0.07); color: var(--muted); }
+
+    .reject-textarea {
+      width: 100%; resize: none;
+      background: rgba(255,255,255,0.06);
+      border: 1px solid rgba(255,255,255,0.12);
+      border-radius: 10px;
+      color: var(--text);
+      padding: 10px 12px;
+      font-size: 14px; font-family: inherit;
+      outline: none;
+    }
+    .reject-textarea:focus { border-color: var(--accent); }
+
+    .admin-user-row {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 12px 16px;
+      display: flex; align-items: center; gap: 12px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .user-info { flex: 1; min-width: 0; }
+    .user-name  { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .user-meta  { font-size: 12px; color: var(--muted); margin: 2px 0; }
+    .user-balance { font-size: 13px; color: var(--success); font-weight: 600; }
   </style>
 </head>
 <body>
@@ -644,7 +812,9 @@ async function init() {
     userBalance = me.balance_usd || 0;
     document.getElementById('balance-el').textContent = `$${userBalance.toFixed(2)}`;
 
-    if (me.user_role === 'model') {
+    if (me.is_admin) {
+      await initAdminPanel();
+    } else if (me.user_role === 'model') {
       await initModelDashboard();
     } else {
       const modelsR = await get('/api/models');
@@ -962,6 +1132,293 @@ async function startChat() {
     setBtnBuy();
     showToast('Ошибка соединения', 'error');
   }
+}
+
+// ── Admin Panel ───────────────────────────────────────────
+
+async function initAdminPanel() {
+  document.querySelector('.header-title').textContent = '⚙️ Admin Panel';
+  document.getElementById('balance-el').textContent = 'Admin';
+  document.getElementById('content').innerHTML = `
+    <div class="admin-tabs" id="admin-tabs">
+      <button class="tab-btn active" data-tab="overview" onclick="switchAdminTab('overview')">📊 Обзор</button>
+      <button class="tab-btn" data-tab="models"          onclick="switchAdminTab('models')">👩 Модели</button>
+      <button class="tab-btn" data-tab="withdrawals"     onclick="switchAdminTab('withdrawals')">💸 Выводы</button>
+      <button class="tab-btn" data-tab="fans"            onclick="switchAdminTab('fans')">👥 Фанаты</button>
+    </div>
+    <div id="admin-content">
+      <div class="loader"><div class="spin"></div><span>Загрузка...</span></div>
+    </div>`;
+  await loadAdminTab('overview');
+}
+
+async function switchAdminTab(tab) {
+  document.querySelectorAll('.tab-btn').forEach(b =>
+    b.classList.toggle('active', b.dataset.tab === tab)
+  );
+  document.getElementById('admin-content').innerHTML =
+    '<div class="loader"><div class="spin"></div><span>Загрузка...</span></div>';
+  await loadAdminTab(tab);
+}
+
+async function loadAdminTab(tab) {
+  try {
+    let r, data;
+    switch (tab) {
+      case 'overview':
+        r = await get('/api/admin/stats');
+        if (!r.ok) throw new Error((await r.json()).detail || 'error');
+        renderAdminOverview(await r.json());
+        break;
+      case 'models':
+        r = await get('/api/admin/models');
+        if (!r.ok) throw new Error((await r.json()).detail || 'error');
+        renderAdminModels(await r.json());
+        break;
+      case 'withdrawals':
+        r = await get('/api/admin/withdrawals');
+        if (!r.ok) throw new Error((await r.json()).detail || 'error');
+        renderAdminWithdrawals(await r.json());
+        break;
+      case 'fans':
+        r = await get('/api/admin/users');
+        if (!r.ok) throw new Error((await r.json()).detail || 'error');
+        renderAdminUsers(await r.json());
+        break;
+    }
+  } catch (e) {
+    document.getElementById('admin-content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-title">Ошибка загрузки</div>
+        <div class="empty-sub">${esc(String(e.message || e))}</div>
+      </div>`;
+  }
+}
+
+function renderAdminOverview(d) {
+  document.getElementById('admin-content').innerHTML = `
+    <div class="admin-body">
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Пользователей</div>
+          <div class="stat-value" style="color:var(--accent)">${d.total_users}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Моделей</div>
+          <div class="stat-value" style="color:var(--accent)">${d.total_models}</div>
+        </div>
+      </div>
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Чатов сейчас</div>
+          <div class="stat-value" style="color:var(--success)">${d.active_chats}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">Выводы pending</div>
+          <div class="stat-value" style="color:${d.pending_withdrawals > 0 ? 'var(--danger)' : 'var(--muted)'}">${d.pending_withdrawals}</div>
+        </div>
+      </div>
+      <div class="revenue-card">
+        <div class="section-title" style="margin:0 0 8px">💰 Доход платформы (30%)</div>
+        <div class="revenue-row">
+          <span class="revenue-label">За 30 дней</span>
+          <span class="revenue-value">$${d.platform_revenue_30d.toFixed(2)}</span>
+        </div>
+        <div class="revenue-row">
+          <span class="revenue-label">Всего за всё время</span>
+          <span class="revenue-value secondary">$${d.platform_revenue_total.toFixed(2)}</span>
+        </div>
+      </div>
+      <button class="admin-add-btn" onclick="doAddModel()">➕ Добавить модель</button>
+    </div>`;
+}
+
+function renderAdminModels(models) {
+  if (!models || !models.length) {
+    document.getElementById('admin-content').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">👩</div><div class="empty-title">Нет моделей</div><div class="empty-sub">Добавь первую через /admin в боте</div></div>';
+    return;
+  }
+  const html = models.map(m => `
+    <div class="admin-model-card">
+      <div class="model-thumb-wrap">
+        ${m.preview_photo
+          ? `<img class="model-thumb" src="/api/photo/${encodeURIComponent(m.preview_photo)}" alt="" loading="lazy">`
+          : `<div class="model-thumb-ph">💄</div>`}
+      </div>
+      <div class="model-info">
+        <div class="model-info-name">${esc(m.name)}${m.age ? `, ${m.age}` : ''}</div>
+        <div class="model-info-meta">
+          <span class="badge ${m.is_linked ? 'badge-ok' : 'badge-warn'}">
+            ${m.is_linked ? '🔗 Привязана' : '⚠️ Не привязана'}
+          </span>
+        </div>
+        <div class="model-stats-row">
+          <span>💬 ${m.active_chats} чат(ов)</span>
+          <span>💰 $${m.total_earnings.toFixed(2)} earned</span>
+        </div>
+        <div class="model-stats-row">
+          <span>💵 Баланс: $${m.balance_usd.toFixed(2)}</span>
+          ${m.telegram_user_id ? `<span>ID: ${m.telegram_user_id}</span>` : ''}
+        </div>
+      </div>
+    </div>`).join('');
+  document.getElementById('admin-content').innerHTML =
+    `<div class="admin-body" style="display:flex;flex-direction:column;gap:10px;">${html}</div>`;
+}
+
+function renderAdminWithdrawals(withdrawals) {
+  if (!withdrawals || !withdrawals.length) {
+    document.getElementById('admin-content').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">✅</div><div class="empty-title">Нет pending заявок</div></div>';
+    return;
+  }
+  const html = withdrawals.map(w => {
+    const date = w.created_at ? new Date(w.created_at * 1000).toLocaleDateString('ru') : '—';
+    const name = w.username ? '@' + w.username : (w.full_name || 'User #' + w.model_user_id);
+    return `
+      <div class="admin-withdrawal-card" id="wd-${w.id}">
+        <div class="wd-header">
+          <span class="wd-id">#${w.id}</span>
+          <span class="wd-name">${esc(name)}</span>
+          <span class="wd-date">${date}</span>
+        </div>
+        <div class="wd-amount">$${w.amount_usd.toFixed(2)}</div>
+        <div class="wd-ltc">${esc(w.ltc_address)}</div>
+        <div class="action-row" id="wd-actions-${w.id}">
+          <button class="btn-sm btn-approve" onclick="approveWithdrawal(${w.id})">✅ Одобрить</button>
+          <button class="btn-sm btn-reject"  onclick="showRejectForm(${w.id})">❌ Отклонить</button>
+        </div>
+        <div id="wd-reject-form-${w.id}" style="display:none;margin-top:10px;">
+          <textarea class="reject-textarea" id="wd-reason-${w.id}" rows="2" placeholder="Причина отклонения..."></textarea>
+          <div class="action-row" style="margin-top:8px;">
+            <button class="btn-sm btn-reject" onclick="confirmReject(${w.id})">Подтвердить</button>
+            <button class="btn-sm btn-muted"  onclick="hideRejectForm(${w.id})">Отмена</button>
+          </div>
+        </div>
+      </div>`;
+  }).join('');
+  document.getElementById('admin-content').innerHTML =
+    `<div class="admin-body" style="display:flex;flex-direction:column;gap:10px;">${html}</div>`;
+}
+
+function renderAdminUsers(users) {
+  if (!users || !users.length) {
+    document.getElementById('admin-content').innerHTML =
+      '<div class="empty-state"><div class="empty-icon">👥</div><div class="empty-title">Нет пользователей</div></div>';
+    return;
+  }
+  const html = users.map(u => {
+    const name = u.username ? '@' + u.username : (u.full_name || 'User #' + u.user_id);
+    return `
+      <div class="admin-user-row">
+        <div class="user-info">
+          <div class="user-name">${esc(name)}</div>
+          <div class="user-meta">
+            ID: ${u.user_id}
+            ${u.user_role === 'model' ? ' · <span class="badge badge-blue">Модель</span>' : ''}
+            ${u.is_banned ? ' · <span class="badge badge-err">Бан</span>' : ''}
+          </div>
+          <div class="user-balance">$${u.balance_usd.toFixed(2)}</div>
+        </div>
+        ${u.is_banned
+          ? `<button class="btn-sm btn-approve" style="flex:none;width:80px;" onclick="unbanUser(${u.user_id})">✅ Разбан</button>`
+          : `<button class="btn-sm btn-reject"  style="flex:none;width:70px;" onclick="banUser(${u.user_id})">🚫 Бан</button>`
+        }
+      </div>`;
+  }).join('');
+  document.getElementById('admin-content').innerHTML = `
+    <div class="admin-body">
+      <div style="color:var(--muted);font-size:12px;margin-bottom:10px;">Последние 50 пользователей</div>
+      <div style="display:flex;flex-direction:column;gap:8px;">${html}</div>
+    </div>`;
+}
+
+// ── Withdrawal actions ────────────────────────────────────
+
+async function approveWithdrawal(id) {
+  tg.HapticFeedback.impactOccurred('medium');
+  const r = await post(`/api/admin/withdrawals/${id}/approve`, {});
+  if (r.ok) {
+    document.getElementById('wd-' + id)?.remove();
+    showToast('✅ Заявка #' + id + ' одобрена!', 'success');
+    tg.HapticFeedback.notificationOccurred('success');
+    if (!document.querySelector('[id^="wd-"]')) renderAdminWithdrawals([]);
+  } else {
+    const d = await r.json();
+    showToast('❌ ' + (d.detail || 'Ошибка'), 'error');
+  }
+}
+
+function showRejectForm(id) {
+  document.getElementById('wd-reject-form-' + id).style.display = 'block';
+  document.getElementById('wd-actions-' + id).style.display = 'none';
+}
+function hideRejectForm(id) {
+  document.getElementById('wd-reject-form-' + id).style.display = 'none';
+  document.getElementById('wd-actions-' + id).style.display = 'flex';
+}
+
+async function confirmReject(id) {
+  const reason = document.getElementById('wd-reason-' + id).value.trim();
+  if (!reason) { showToast('Введи причину', 'error'); return; }
+  tg.HapticFeedback.impactOccurred('medium');
+  const r = await post(`/api/admin/withdrawals/${id}/reject`, {reason});
+  if (r.ok) {
+    document.getElementById('wd-' + id)?.remove();
+    showToast('Заявка #' + id + ' отклонена', '');
+    tg.HapticFeedback.notificationOccurred('warning');
+    if (!document.querySelector('[id^="wd-"]')) renderAdminWithdrawals([]);
+  } else {
+    const d = await r.json();
+    showToast('❌ ' + (d.detail || 'Ошибка'), 'error');
+  }
+}
+
+// ── User actions ──────────────────────────────────────────
+
+function banUser(uid) {
+  tg.showPopup({
+    title: 'Заблокировать',
+    message: 'Заблокировать пользователя ID ' + uid + '?\nОн не сможет использовать бота.',
+    buttons: [
+      {id: 'yes', type: 'destructive', text: 'Заблокировать'},
+      {id: 'no',  type: 'cancel'},
+    ],
+  }, async (btnId) => {
+    if (btnId !== 'yes') return;
+    const r = await post(`/api/admin/users/${uid}/ban`, {});
+    if (r.ok) {
+      showToast('🚫 Пользователь ' + uid + ' заблокирован', '');
+      tg.HapticFeedback.notificationOccurred('warning');
+      await switchAdminTab('fans');
+    } else {
+      showToast('❌ Ошибка', 'error');
+    }
+  });
+}
+
+async function unbanUser(uid) {
+  const r = await post(`/api/admin/users/${uid}/unban`, {});
+  if (r.ok) {
+    showToast('✅ Пользователь ' + uid + ' разблокирован', 'success');
+    tg.HapticFeedback.notificationOccurred('success');
+    await switchAdminTab('fans');
+  } else {
+    showToast('❌ Ошибка', 'error');
+  }
+}
+
+function doAddModel() {
+  tg.showPopup({
+    title: 'Добавление модели',
+    message: 'Используй /admin в боте — там запустится пошаговый визард:\nфото → описание → привязка аккаунта.',
+    buttons: [
+      {id: 'open', type: 'default', text: 'Открыть бот'},
+      {id: 'cancel', type: 'cancel'},
+    ],
+  }, (btnId) => { if (btnId === 'open') tg.close(); });
 }
 
 // ── Toast ─────────────────────────────────────────────────

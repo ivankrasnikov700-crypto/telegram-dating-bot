@@ -13,8 +13,8 @@ from fastapi import FastAPI, HTTPException, Header, Request
 from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import BOT_TOKEN
-from database import register_user, get_usd_balance, get_user, get_connection, _cur
+from config import BOT_TOKEN, ADMIN_IDS
+from database import register_user, get_usd_balance, get_user, get_connection, _cur, ban_user, unban_user
 from database.models import get_all_models, get_model, get_all_media, get_model_by_telegram_id
 from database.chat_sessions import (
     activate_day_chat,
@@ -24,6 +24,7 @@ from database.chat_sessions import (
     InsufficientBalanceError,
     ActiveChatExistsError,
 )
+from database.withdrawals import get_pending_withdrawals, get_withdrawal, process_withdrawal
 
 app = FastAPI(docs_url=None, redoc_url=None)
 
@@ -51,6 +52,13 @@ def _validate_init_data(init_data: str) -> dict | None:
         return json.loads(parsed.get("user", "{}"))
     except Exception:
         return None
+
+
+def _admin_auth(authorization: str | None) -> dict:
+    user = _auth(authorization)
+    if int(user["id"]) not in ADMIN_IDS:
+        raise HTTPException(status_code=403, detail="Not admin")
+    return user
 
 
 def _auth(authorization: str | None) -> dict:
@@ -81,6 +89,7 @@ def get_me(authorization: str = Header(None)):
         "balance_usd": round(float(balance), 2),
         "active_chats": len(chats),
         "user_role": db_user.get("user_role", "fan") if db_user else "fan",
+        "is_admin": uid in ADMIN_IDS,
     }
 
 
@@ -203,6 +212,205 @@ async def start_chat(request: Request, authorization: str = Header(None)):
         raise HTTPException(status_code=409, detail="Chat already active")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ─────────────────────────────────────────────
+# Admin API
+# ─────────────────────────────────────────────
+
+@app.get("/api/admin/stats")
+def admin_stats(authorization: str = Header(None)):
+    _admin_auth(authorization)
+    conn = get_connection()
+    cursor = _cur(conn)
+    now = int(time.time())
+    since_30d = now - 30 * 86400
+    try:
+        cursor.execute("SELECT COUNT(*) AS cnt FROM users")
+        total_users = int(cursor.fetchone()["cnt"])
+
+        cursor.execute("SELECT COUNT(*) AS cnt FROM models WHERE is_active = 1")
+        total_models = int(cursor.fetchone()["cnt"])
+
+        cursor.execute(
+            "SELECT COUNT(*) AS cnt FROM model_chats WHERE is_active = 1 AND expires_at > %s",
+            (now,),
+        )
+        active_chats = int(cursor.fetchone()["cnt"])
+
+        cursor.execute("SELECT COUNT(*) AS cnt FROM model_withdrawals WHERE status = 'pending'")
+        pending_withdrawals = int(cursor.fetchone()["cnt"])
+
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(ABS(bt.amount_usd)), 0) AS total
+            FROM balance_transactions bt
+            JOIN users u ON u.user_id = bt.user_id
+            WHERE bt.amount_usd < 0 AND u.user_role = 'fan' AND bt.created_at >= %s
+            """,
+            (since_30d,),
+        )
+        fan_spend_30d = float(cursor.fetchone()["total"])
+
+        cursor.execute(
+            """
+            SELECT COALESCE(SUM(ABS(bt.amount_usd)), 0) AS total
+            FROM balance_transactions bt
+            JOIN users u ON u.user_id = bt.user_id
+            WHERE bt.amount_usd < 0 AND u.user_role = 'fan'
+            """
+        )
+        fan_spend_total = float(cursor.fetchone()["total"])
+    finally:
+        conn.close()
+
+    return {
+        "total_users":            total_users,
+        "total_models":           total_models,
+        "active_chats":           active_chats,
+        "pending_withdrawals":    pending_withdrawals,
+        "platform_revenue_30d":   round(fan_spend_30d * 0.30, 2),
+        "platform_revenue_total": round(fan_spend_total * 0.30, 2),
+    }
+
+
+@app.get("/api/admin/models")
+def admin_models_list(authorization: str = Header(None)):
+    _admin_auth(authorization)
+    conn = get_connection()
+    cursor = _cur(conn)
+    now = int(time.time())
+    try:
+        cursor.execute(
+            """
+            SELECT
+                m.id, m.name, m.age, m.preview_photo, m.telegram_user_id,
+                u.balance_usd,
+                (SELECT COUNT(*) FROM model_chats mc
+                 WHERE mc.model_id = m.telegram_user_id
+                 AND mc.is_active = 1 AND mc.expires_at > %s) AS active_chats,
+                (SELECT COALESCE(SUM(amount_usd), 0) FROM balance_transactions bt
+                 WHERE bt.user_id = m.telegram_user_id AND bt.amount_usd > 0) AS total_earnings
+            FROM models m
+            LEFT JOIN users u ON u.user_id = m.telegram_user_id
+            WHERE m.is_active = 1
+            ORDER BY m.created_at DESC
+            """,
+            (now,),
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+
+    return [
+        {
+            "id":               d["id"],
+            "name":             d["name"],
+            "age":              d.get("age"),
+            "preview_photo":    d.get("preview_photo"),
+            "telegram_user_id": d.get("telegram_user_id"),
+            "is_linked":        bool(d.get("telegram_user_id")),
+            "active_chats":     int(d.get("active_chats") or 0),
+            "balance_usd":      round(float(d.get("balance_usd") or 0), 2),
+            "total_earnings":   round(float(d.get("total_earnings") or 0), 2),
+        }
+        for d in (dict(r) for r in rows)
+    ]
+
+
+@app.get("/api/admin/withdrawals")
+def admin_withdrawals(authorization: str = Header(None)):
+    _admin_auth(authorization)
+    rows = get_pending_withdrawals()
+    return [
+        {
+            "id":             r["id"],
+            "model_user_id":  r["model_user_id"],
+            "amount_usd":     round(float(r["amount_usd"]), 2),
+            "ltc_address":    r["ltc_address"],
+            "status":         r["status"],
+            "created_at":     r.get("created_at"),
+            "username":       r.get("username"),
+            "full_name":      r.get("full_name"),
+        }
+        for r in rows
+    ]
+
+
+@app.post("/api/admin/withdrawals/{wid}/approve")
+def admin_approve_withdrawal(wid: int, authorization: str = Header(None)):
+    _admin_auth(authorization)
+    w = get_withdrawal(wid)
+    if not w:
+        raise HTTPException(status_code=404, detail="Not found")
+    if w["status"] != "pending":
+        raise HTTPException(status_code=409, detail="Already processed: " + w["status"])
+    result = process_withdrawal(wid, "paid", "Approved via Mini App admin")
+    if not result:
+        raise HTTPException(status_code=500, detail="Processing failed")
+    return {"ok": True}
+
+
+@app.post("/api/admin/withdrawals/{wid}/reject")
+async def admin_reject_withdrawal(wid: int, request: Request, authorization: str = Header(None)):
+    _admin_auth(authorization)
+    body = await request.json()
+    reason = (body.get("reason") or "").strip() or "Отклонено администратором"
+    w = get_withdrawal(wid)
+    if not w:
+        raise HTTPException(status_code=404, detail="Not found")
+    if w["status"] != "pending":
+        raise HTTPException(status_code=409, detail="Already processed: " + w["status"])
+    process_withdrawal(wid, "rejected", reason)
+    return {"ok": True}
+
+
+@app.get("/api/admin/users")
+def admin_users(authorization: str = Header(None)):
+    _admin_auth(authorization)
+    conn = get_connection()
+    cursor = _cur(conn)
+    try:
+        cursor.execute(
+            """
+            SELECT user_id, username, full_name, balance_usd, user_role, is_banned
+            FROM users
+            ORDER BY user_id DESC
+            LIMIT 50
+            """
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "user_id":    r["user_id"],
+            "username":   r.get("username"),
+            "full_name":  r.get("full_name"),
+            "balance_usd": round(float(r.get("balance_usd") or 0), 2),
+            "user_role":  r.get("user_role", "fan"),
+            "is_banned":  bool(r.get("is_banned")),
+        }
+        for r in rows
+    ]
+
+
+@app.post("/api/admin/users/{uid}/ban")
+def admin_ban_user(uid: int, authorization: str = Header(None)):
+    _admin_auth(authorization)
+    if not get_user(uid):
+        raise HTTPException(status_code=404, detail="User not found")
+    ban_user(uid)
+    return {"ok": True}
+
+
+@app.post("/api/admin/users/{uid}/unban")
+def admin_unban_user(uid: int, authorization: str = Header(None)):
+    _admin_auth(authorization)
+    if not get_user(uid):
+        raise HTTPException(status_code=404, detail="User not found")
+    unban_user(uid)
+    return {"ok": True}
 
 
 @app.get("/api/photo/{file_id:path}")
