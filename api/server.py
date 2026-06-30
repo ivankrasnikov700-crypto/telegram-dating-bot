@@ -239,37 +239,51 @@ def admin_stats(authorization: str = Header(None)):
         cursor.execute("SELECT COUNT(*) AS cnt FROM models WHERE is_active = 1")
         total_models = int(cursor.fetchone()["cnt"])
 
-        cursor.execute(
-            "SELECT COUNT(*) AS cnt FROM model_chats WHERE is_active = 1 AND expires_at > %s",
-            (now,),
-        )
-        active_chats = int(cursor.fetchone()["cnt"])
+        # Tables that may be absent in older deployments — fall back to 0
+        try:
+            cursor.execute(
+                "SELECT COUNT(*) AS cnt FROM model_chats WHERE is_active = 1 AND expires_at > %s",
+                (now,),
+            )
+            active_chats = int(cursor.fetchone()["cnt"])
+        except Exception:
+            conn.rollback()
+            active_chats = 0
 
-        cursor.execute("SELECT COUNT(*) AS cnt FROM model_withdrawals WHERE status = 'pending'")
-        pending_withdrawals = int(cursor.fetchone()["cnt"])
+        try:
+            cursor.execute("SELECT COUNT(*) AS cnt FROM model_withdrawals WHERE status = 'pending'")
+            pending_withdrawals = int(cursor.fetchone()["cnt"])
+        except Exception:
+            conn.rollback()
+            pending_withdrawals = 0
 
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(ABS(bt.amount_usd)), 0) AS total
-            FROM balance_transactions bt
-            JOIN users u ON u.user_id = bt.user_id
-            WHERE bt.amount_usd < 0 AND u.user_role = 'fan' AND bt.created_at >= %s
-            """,
-            (since_30d,),
-        )
-        fan_spend_30d = float(cursor.fetchone()["total"])
+        try:
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(ABS(bt.amount_usd)), 0) AS total
+                FROM balance_transactions bt
+                JOIN users u ON u.user_id = bt.user_id
+                WHERE bt.amount_usd < 0 AND u.user_role = 'fan' AND bt.created_at >= %s
+                """,
+                (since_30d,),
+            )
+            fan_spend_30d = float(cursor.fetchone()["total"])
 
-        cursor.execute(
-            """
-            SELECT COALESCE(SUM(ABS(bt.amount_usd)), 0) AS total
-            FROM balance_transactions bt
-            JOIN users u ON u.user_id = bt.user_id
-            WHERE bt.amount_usd < 0 AND u.user_role = 'fan'
-            """
-        )
-        fan_spend_total = float(cursor.fetchone()["total"])
+            cursor.execute(
+                """
+                SELECT COALESCE(SUM(ABS(bt.amount_usd)), 0) AS total
+                FROM balance_transactions bt
+                JOIN users u ON u.user_id = bt.user_id
+                WHERE bt.amount_usd < 0 AND u.user_role = 'fan'
+                """
+            )
+            fan_spend_total = float(cursor.fetchone()["total"])
+        except Exception:
+            conn.rollback()
+            fan_spend_30d = 0.0
+            fan_spend_total = 0.0
+
     except Exception as e:
-        conn.close()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
@@ -290,45 +304,68 @@ def admin_models_list(authorization: str = Header(None)):
     conn = get_connection()
     cursor = _cur(conn)
     now = int(time.time())
+    result = []
     try:
         cursor.execute(
-            """
-            SELECT
-                m.id, m.name, m.age, m.preview_photo, m.telegram_user_id,
-                u.balance_usd,
-                (SELECT COUNT(*) FROM model_chats mc
-                 WHERE mc.model_id = m.telegram_user_id
-                 AND mc.is_active = 1 AND mc.expires_at > %s) AS active_chats,
-                (SELECT COALESCE(SUM(amount_usd), 0) FROM balance_transactions bt
-                 WHERE bt.user_id = m.telegram_user_id AND bt.amount_usd > 0) AS total_earnings
-            FROM models m
-            LEFT JOIN users u ON u.user_id = m.telegram_user_id
-            WHERE m.is_active = 1
-            ORDER BY m.created_at DESC
-            """,
-            (now,),
+            "SELECT id, name, age, preview_photo, telegram_user_id "
+            "FROM models WHERE is_active = 1 ORDER BY created_at DESC"
         )
-        rows = cursor.fetchall()
+        model_rows = [dict(r) for r in cursor.fetchall()]
+
+        for m in model_rows:
+            tg_uid = m.get("telegram_user_id")
+            active_chats   = 0
+            total_earnings = 0.0
+            balance_usd    = 0.0
+
+            if tg_uid:
+                try:
+                    cursor.execute(
+                        "SELECT COUNT(*) AS cnt FROM model_chats "
+                        "WHERE model_id = %s AND is_active = 1 AND expires_at > %s",
+                        (tg_uid, now),
+                    )
+                    active_chats = int(cursor.fetchone()["cnt"])
+                except Exception:
+                    conn.rollback()
+
+                try:
+                    cursor.execute(
+                        "SELECT COALESCE(SUM(amount_usd), 0) AS total "
+                        "FROM balance_transactions WHERE user_id = %s AND amount_usd > 0",
+                        (tg_uid,),
+                    )
+                    total_earnings = float(cursor.fetchone()["total"])
+                except Exception:
+                    conn.rollback()
+
+                try:
+                    cursor.execute(
+                        "SELECT balance_usd FROM users WHERE user_id = %s", (tg_uid,)
+                    )
+                    row = cursor.fetchone()
+                    balance_usd = float(row["balance_usd"]) if row else 0.0
+                except Exception:
+                    conn.rollback()
+
+            result.append({
+                "id":               m["id"],
+                "name":             m["name"],
+                "age":              m.get("age"),
+                "preview_photo":    m.get("preview_photo"),
+                "telegram_user_id": tg_uid,
+                "is_linked":        bool(tg_uid),
+                "active_chats":     active_chats,
+                "balance_usd":      round(balance_usd, 2),
+                "total_earnings":   round(total_earnings, 2),
+            })
+
     except Exception as e:
-        conn.close()
         raise HTTPException(status_code=500, detail=str(e))
     finally:
         conn.close()
 
-    return [
-        {
-            "id":               d["id"],
-            "name":             d["name"],
-            "age":              d.get("age"),
-            "preview_photo":    d.get("preview_photo"),
-            "telegram_user_id": d.get("telegram_user_id"),
-            "is_linked":        bool(d.get("telegram_user_id")),
-            "active_chats":     int(d.get("active_chats") or 0),
-            "balance_usd":      round(float(d.get("balance_usd") or 0), 2),
-            "total_earnings":   round(float(d.get("total_earnings") or 0), 2),
-        }
-        for d in (dict(r) for r in rows)
-    ]
+    return result
 
 
 @app.get("/api/admin/withdrawals")
