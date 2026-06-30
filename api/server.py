@@ -156,6 +156,120 @@ def model_dashboard(authorization: str = Header(None)):
     }
 
 
+# ─────────────────────────────────────────────
+# Chat: Fan ↔ Model messaging
+# ─────────────────────────────────────────────
+
+@app.post("/api/chat/{model_id}/send")
+async def fan_send_message(model_id: int, request: Request, authorization: str = Header(None)):
+    user = _auth(authorization)
+    fan_id = int(user["id"])
+    body = await request.json()
+    content = (body.get("text") or "").strip()[:2000]
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty message")
+    conn = get_connection(); cur = _cur(conn)
+    try:
+        cur.execute(
+            "SELECT chat_id FROM model_chats WHERE fan_id=%s AND model_id=%s AND is_active=1 AND expires_at>%s",
+            (fan_id, model_id, int(time.time()))
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="No active chat")
+        cur.execute(
+            "INSERT INTO chat_messages (chat_id, sender_id, sender_role, content, created_at) VALUES (%s,%s,'fan',%s,%s)",
+            (row["chat_id"], fan_id, content, int(time.time()))
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
+@app.get("/api/chat/{model_id}/messages")
+def fan_get_messages(model_id: int, since: int = 0, authorization: str = Header(None)):
+    user = _auth(authorization)
+    fan_id = int(user["id"])
+    conn = get_connection(); cur = _cur(conn)
+    try:
+        cur.execute(
+            "SELECT chat_id FROM model_chats WHERE fan_id=%s AND model_id=%s AND is_active=1 AND expires_at>%s",
+            (fan_id, model_id, int(time.time()))
+        )
+        row = cur.fetchone()
+        if not row:
+            return []
+        cur.execute(
+            "SELECT id, sender_role, content, created_at FROM chat_messages WHERE chat_id=%s AND id>%s ORDER BY created_at ASC LIMIT 100",
+            (row["chat_id"], since)
+        )
+        msgs = cur.fetchall()
+    finally:
+        conn.close()
+    return [{"id": m["id"], "role": m["sender_role"], "text": m["content"], "ts": m["created_at"]} for m in msgs]
+
+
+@app.post("/api/model/chat/{fan_id}/send")
+async def model_send_message(fan_id: int, request: Request, authorization: str = Header(None)):
+    user = _auth(authorization)
+    model_user_id = int(user["id"])
+    body = await request.json()
+    content = (body.get("text") or "").strip()[:2000]
+    if not content:
+        raise HTTPException(status_code=400, detail="Empty message")
+    conn = get_connection(); cur = _cur(conn)
+    try:
+        cur.execute("SELECT id FROM models WHERE telegram_user_id=%s AND is_active=1", (model_user_id,))
+        mrow = cur.fetchone()
+        if not mrow:
+            raise HTTPException(status_code=403, detail="Not a model")
+        model_id = mrow["id"]
+        cur.execute(
+            "SELECT chat_id FROM model_chats WHERE fan_id=%s AND model_id=%s AND is_active=1 AND expires_at>%s",
+            (fan_id, model_id, int(time.time()))
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="No active chat")
+        cur.execute(
+            "INSERT INTO chat_messages (chat_id, sender_id, sender_role, content, created_at) VALUES (%s,%s,'model',%s,%s)",
+            (row["chat_id"], model_user_id, content, int(time.time()))
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return {"ok": True}
+
+
+@app.get("/api/model/chat/{fan_id}/messages")
+def model_get_messages(fan_id: int, since: int = 0, authorization: str = Header(None)):
+    user = _auth(authorization)
+    model_user_id = int(user["id"])
+    conn = get_connection(); cur = _cur(conn)
+    try:
+        cur.execute("SELECT id FROM models WHERE telegram_user_id=%s AND is_active=1", (model_user_id,))
+        mrow = cur.fetchone()
+        if not mrow:
+            return []
+        model_id = mrow["id"]
+        cur.execute(
+            "SELECT chat_id FROM model_chats WHERE fan_id=%s AND model_id=%s AND is_active=1 AND expires_at>%s",
+            (fan_id, model_id, int(time.time()))
+        )
+        row = cur.fetchone()
+        if not row:
+            return []
+        cur.execute(
+            "SELECT id, sender_role, content, created_at FROM chat_messages WHERE chat_id=%s AND id>%s ORDER BY created_at ASC LIMIT 100",
+            (row["chat_id"], since)
+        )
+        msgs = cur.fetchall()
+    finally:
+        conn.close()
+    return [{"id": m["id"], "role": m["sender_role"], "text": m["content"], "ts": m["created_at"]} for m in msgs]
+
+
 @app.get("/api/models")
 def list_models(authorization: str = Header(None)):
     _auth(authorization)

@@ -92,6 +92,20 @@ def init_db():
         )
     ''')
 
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS chat_messages (
+            id          SERIAL PRIMARY KEY,
+            chat_id     TEXT NOT NULL,
+            sender_id   BIGINT NOT NULL,
+            sender_role TEXT NOT NULL,
+            content     TEXT NOT NULL,
+            created_at  BIGINT NOT NULL
+        )
+    ''')
+    cursor.execute(
+        'CREATE INDEX IF NOT EXISTS idx_chat_messages_chat_id ON chat_messages(chat_id, created_at)'
+    )
+
     # Добавляем колонки, которые могли отсутствовать в ранних версиях БД
     for col, definition in [
         ("balance_usd",  "REAL DEFAULT 0.0"),

@@ -507,6 +507,21 @@
     }
     .no-chats-icon { font-size: 36px; margin-bottom: 10px; }
 
+    /* ── In-app chat ───────────────────────────────── */
+    .chat-screen { display:flex; flex-direction:column; height:calc(100vh - 52px); }
+    .chat-header { padding:12px 16px; background:var(--card); display:flex; align-items:center; gap:10px; box-shadow:0 2px 8px rgba(0,0,0,0.2); flex:none; }
+    .chat-back { background:none; border:none; color:var(--accent); font-size:22px; cursor:pointer; padding:2px 8px; line-height:1; }
+    .chat-partner-name { font-size:15px; font-weight:600; flex:1; }
+    .chat-messages { flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:6px; }
+    .msg { max-width:78%; padding:9px 13px; border-radius:16px; font-size:14px; line-height:1.45; word-break:break-word; }
+    .msg.mine   { background:var(--accent); color:#fff; align-self:flex-end; border-bottom-right-radius:4px; }
+    .msg.theirs { background:var(--card); color:var(--text); align-self:flex-start; border-bottom-left-radius:4px; }
+    .msg-time   { font-size:11px; opacity:0.55; margin-top:3px; text-align:right; }
+    .msg.theirs .msg-time { text-align:left; }
+    .chat-input-bar { padding:10px 12px; background:var(--card); display:flex; gap:8px; align-items:flex-end; border-top:1px solid rgba(255,255,255,0.07); flex:none; }
+    .chat-input { flex:1; padding:9px 13px; border-radius:20px; border:1px solid rgba(255,255,255,0.12); background:var(--bg); color:var(--text); font-size:14px; resize:none; max-height:100px; outline:none; font-family:inherit; }
+    .chat-send-btn { width:40px; height:40px; border-radius:50%; background:var(--accent); border:none; color:#fff; font-size:20px; cursor:pointer; flex:none; display:flex; align-items:center; justify-content:center; }
+
     .rules-card {
       background: var(--card);
       border-radius: var(--radius);
@@ -775,8 +790,12 @@ const AUTH = tg.initData ? `tma ${tg.initData}` : null;
 
 let userBalance = 0;
 let currentModelId = null;
+let currentModelName = '';
 let currentHasChat = false;
 let gSlides = [];
+let chatPollInterval = null;
+let chatLastMsgId = 0;
+let chatContext = null;
 let gIndex  = 0;
 let gTouchX = 0;
 
@@ -868,13 +887,13 @@ function renderModelDashboard(data) {
           ? `${c.hours_left}ч ${c.minutes_left}м`
           : `${c.minutes_left}м`;
         return `
-          <div class="chat-card">
+          <div class="chat-card" onclick="openChat(${c.fan_id}, '${esc(c.fan_name)}', 'model')" style="cursor:pointer;">
             <div class="chat-avatar">💬</div>
             <div class="chat-info">
               <div class="chat-fan-name">${esc(c.fan_name)}</div>
-              <div class="chat-time">Активный чат</div>
+              <div class="chat-time">Активный чат · ⏱ ${timeStr}</div>
             </div>
-            <div class="chat-time-badge">⏱ ${timeStr}</div>
+            <div style="color:var(--accent);font-size:20px;flex:none;">›</div>
           </div>`;
       }).join('')
     : `<div class="no-chats">
@@ -950,6 +969,73 @@ function doWithdraw() {
   });
 }
 
+// ── In-app Chat ──────────────────────────────────────────
+
+function openChat(partnerId, partnerName, role) {
+  if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+  chatLastMsgId = 0;
+  chatContext = {role, partnerId, partnerName};
+  document.getElementById('content').innerHTML = `
+    <div class="chat-screen">
+      <div class="chat-header">
+        <button class="chat-back" onclick="chatGoBack()">←</button>
+        <div class="chat-partner-name">${esc(partnerName)}</div>
+      </div>
+      <div class="chat-messages" id="chat-msgs"></div>
+      <div class="chat-input-bar">
+        <textarea class="chat-input" id="chat-input" placeholder="Сообщение..." rows="1"
+          onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatSend();}"></textarea>
+        <button class="chat-send-btn" onclick="chatSend()">➤</button>
+      </div>
+    </div>`;
+  chatPollInterval = setInterval(chatPoll, 3000);
+  chatPoll();
+}
+
+async function chatPoll() {
+  if (!chatContext) return;
+  const {role, partnerId} = chatContext;
+  const url = role === 'fan'
+    ? `/api/chat/${partnerId}/messages?since=${chatLastMsgId}`
+    : `/api/model/chat/${partnerId}/messages?since=${chatLastMsgId}`;
+  try {
+    const r = await get(url);
+    const msgs = await apiJson(r);
+    if (msgs && msgs.length) {
+      const container = document.getElementById('chat-msgs');
+      if (!container) return;
+      msgs.forEach(m => {
+        const isMine = (role === 'fan' && m.role === 'fan') || (role === 'model' && m.role === 'model');
+        const d = document.createElement('div');
+        d.innerHTML = `<div class="msg ${isMine?'mine':'theirs'}">${esc(m.text)}<div class="msg-time">${new Date(m.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div></div>`;
+        container.appendChild(d.firstElementChild);
+        chatLastMsgId = Math.max(chatLastMsgId, m.id);
+      });
+      container.scrollTop = container.scrollHeight;
+    }
+  } catch {}
+}
+
+async function chatSend() {
+  if (!chatContext) return;
+  const input = document.getElementById('chat-input');
+  const text = (input?.value || '').trim();
+  if (!text) return;
+  const {role, partnerId} = chatContext;
+  const url = role === 'fan' ? `/api/chat/${partnerId}/send` : `/api/model/chat/${partnerId}/send`;
+  input.value = '';
+  try {
+    await post(url, {text});
+    await chatPoll();
+  } catch(e) { showToast('❌ Ошибка отправки', 'error'); }
+}
+
+function chatGoBack() {
+  if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+  chatContext = null;
+  init();
+}
+
 // ── Grid ─────────────────────────────────────────────────
 
 function renderGrid(models) {
@@ -1014,6 +1100,7 @@ async function openProfile(modelId) {
     const m = await res.json();
     currentHasChat   = m.has_active_chat;
     currentAvailable = m.available !== false;
+    currentModelName = m.name || '';
 
     document.getElementById('p-name').textContent = m.name;
     document.getElementById('p-age').textContent  = m.age ? `${m.age} лет` : '';
@@ -1044,7 +1131,7 @@ async function openProfile(modelId) {
     if (!m.available) {
       setBtnSoon();
     } else if (m.has_active_chat) {
-      setBtnActive(m.hours_left || 24);
+      setBtnActive(m.hours_left || 24, modelId, m.name);
     } else {
       setBtnBuy();
     }
@@ -1060,11 +1147,12 @@ function setBtnBuy() {
   b.disabled  = false;
   b.textContent = '💬 Начать чат ($5 / 24ч)';
 }
-function setBtnActive(hours) {
+function setBtnActive(hours, modelId, modelName) {
   const b = document.getElementById('btn-chat');
   b.className = 'btn-action active-chat';
-  b.disabled  = true;
+  b.disabled  = false;
   b.textContent = `✅ Чат активен — ещё ${hours}ч`;
+  b.onclick = () => { closeSheet(); openChat(modelId || currentModelId, modelName || currentModelName, 'fan'); };
 }
 function setBtnSoon() {
   const b = document.getElementById('btn-chat');
@@ -1112,9 +1200,9 @@ async function startChat() {
       currentHasChat = true;
       userBalance = Math.max(0, userBalance - 5);
       document.getElementById('balance-el').textContent = `$${userBalance.toFixed(2)}`;
-      setBtnActive(24);
+      setBtnActive(24, currentModelId, currentModelName);
       tg.HapticFeedback.notificationOccurred('success');
-      showToast('Чат открыт! Напиши модели прямо в бот 💬', 'success');
+      showToast('Чат открыт! 💬', 'success');
     } else if (res.status === 402) {
       setBtnBuy();
       document.getElementById('balance-low').style.display = 'block';
@@ -1122,7 +1210,7 @@ async function startChat() {
       showToast('Пополни баланс — нужно минимум $5', 'error');
     } else if (res.status === 409) {
       currentHasChat = true;
-      setBtnActive(24);
+      setBtnActive(24, currentModelId, currentModelName);
       showToast('Чат уже активен', 'success');
     } else {
       setBtnBuy();
