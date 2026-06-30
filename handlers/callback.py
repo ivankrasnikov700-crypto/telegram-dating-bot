@@ -302,13 +302,20 @@ def register_callback_handlers(bot):
             rate = get_ltc_rate()
         except Exception:
             rate = "N/A"
+        admin_username = None
+        if ADMIN_IDS:
+            try:
+                chat = bot.get_chat(ADMIN_IDS[0])
+                admin_username = chat.username
+            except Exception:
+                pass
         text = (
             "💱 *Обмен валют*\n\n"
             "Текущий курс LTC:\n"
             "1 LTC = *$" + str(rate) + " USD*\n\n"
             "Для обмена крипты на лей (MDL) или обратно — пиши администратору:"
         )
-        safe_edit(bot, call, text, reply_markup=get_exchange_contact_keyboard(), parse_mode="Markdown")
+        safe_edit(bot, call, text, reply_markup=get_exchange_contact_keyboard(admin_username), parse_mode="Markdown")
 
     # ── Пополнить баланс ─────────────────────
 

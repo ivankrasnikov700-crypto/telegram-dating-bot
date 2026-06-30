@@ -87,14 +87,19 @@ def get_payment_keyboard(amount_ltc: float, wallet: str) -> types.InlineKeyboard
     return markup
 
 
-def get_exchange_contact_keyboard() -> types.InlineKeyboardMarkup:
+def get_exchange_contact_keyboard(username: str = None) -> types.InlineKeyboardMarkup:
     """Кнопка связи с администратором обмена + главное меню."""
     markup = types.InlineKeyboardMarkup(row_width=1)
-    markup.add(
-        types.InlineKeyboardButton(
-            "💬 Написать @" + EXCHANGE_ADMIN,
-            url="https://t.me/" + EXCHANGE_ADMIN
-        ),
-        types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu")
-    )
+    if username:
+        markup.add(
+            types.InlineKeyboardButton(
+                "💬 Написать @" + username,
+                url="https://t.me/" + username
+            )
+        )
+    else:
+        markup.add(
+            types.InlineKeyboardButton("💬 Написать администратору", callback_data="noop")
+        )
+    markup.add(types.InlineKeyboardButton("🏠 Главное меню", callback_data="back_to_menu"))
     return markup
