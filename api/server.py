@@ -14,12 +14,13 @@ from fastapi.responses import StreamingResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import BOT_TOKEN
-from database import register_user, get_usd_balance
-from database.models import get_all_models, get_model, get_all_media
+from database import register_user, get_usd_balance, get_user, get_connection, _cur
+from database.models import get_all_models, get_model, get_all_media, get_model_by_telegram_id
 from database.chat_sessions import (
     activate_day_chat,
     get_active_chat,
     get_fan_active_chats,
+    get_model_active_chats,
     InsufficientBalanceError,
     ActiveChatExistsError,
 )
@@ -72,12 +73,70 @@ def get_me(authorization: str = Header(None)):
     user = _auth(authorization)
     uid = int(user["id"])
     register_user(uid, user.get("username", ""), user.get("first_name", ""))
+    db_user = get_user(uid)
     balance = get_usd_balance(uid)
     chats = get_fan_active_chats(uid)
     return {
         "user_id": uid,
         "balance_usd": round(float(balance), 2),
         "active_chats": len(chats),
+        "user_role": db_user.get("user_role", "fan") if db_user else "fan",
+    }
+
+
+@app.get("/api/model/dashboard")
+def model_dashboard(authorization: str = Header(None)):
+    user = _auth(authorization)
+    uid = int(user["id"])
+    db_user = get_user(uid)
+    if not db_user or db_user.get("user_role") != "model":
+        raise HTTPException(status_code=403, detail="Not a model")
+
+    model_profile = get_model_by_telegram_id(uid)
+    chats = get_model_active_chats(uid)
+    now = int(time.time())
+
+    chats_data = []
+    for chat in chats:
+        fan_id = chat["fan_id"]
+        fan = get_user(fan_id)
+        if fan and fan.get("username"):
+            fan_name = "@" + fan["username"]
+        elif fan and fan.get("full_name") and fan["full_name"].strip():
+            fan_name = fan["full_name"]
+        else:
+            fan_name = "Фанат #" + str(fan_id)
+        remaining = max(0, int(chat["expires_at"]) - now)
+        chats_data.append({
+            "fan_id":       fan_id,
+            "fan_name":     fan_name,
+            "hours_left":   remaining // 3600,
+            "minutes_left": (remaining % 3600) // 60,
+        })
+
+    since = now - 30 * 86400
+    conn = get_connection()
+    cursor = _cur(conn)
+    try:
+        cursor.execute(
+            "SELECT COALESCE(SUM(amount_usd), 0) AS total FROM balance_transactions "
+            "WHERE user_id = %s AND amount_usd > 0 AND created_at >= %s",
+            (uid, since),
+        )
+        monthly = round(float(cursor.fetchone()["total"]), 2)
+    finally:
+        conn.close()
+
+    return {
+        "name": model_profile["name"] if model_profile else (db_user.get("full_name") or "Модель"),
+        "balance_usd": round(float(get_usd_balance(uid)), 2),
+        "monthly_earnings": monthly,
+        "active_chats": chats_data,
+        "profile": {
+            "preview_photo": model_profile["preview_photo"] if model_profile else None,
+            "age":           model_profile.get("age") if model_profile else None,
+            "description":   model_profile.get("description", "") if model_profile else "",
+        } if model_profile else None,
     }
 
 

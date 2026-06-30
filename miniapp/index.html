@@ -351,6 +351,214 @@
     .empty-icon { font-size: 52px; margin-bottom: 14px; }
     .empty-title { font-size: 16px; font-weight: 600; color: #9ab; margin-bottom: 6px; }
     .empty-sub   { font-size: 14px; }
+
+    /* ── Model Dashboard ────────────────────── */
+    .model-dashboard { padding: 14px 14px 36px; }
+
+    .model-hero {
+      background: var(--card);
+      border-radius: var(--radius);
+      overflow: hidden;
+      margin-bottom: 12px;
+      box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+    }
+    .model-hero-photo {
+      width: 100%;
+      height: 220px;
+      object-fit: cover;
+      display: block;
+    }
+    .model-hero-placeholder {
+      width: 100%;
+      height: 220px;
+      background: linear-gradient(135deg, #1a2535, #242f3d);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 64px;
+    }
+    .model-hero-body {
+      padding: 16px 18px 18px;
+    }
+    .model-hero-name {
+      font-size: 22px;
+      font-weight: 800;
+      letter-spacing: -0.3px;
+      margin-bottom: 2px;
+    }
+    .model-hero-meta {
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .model-hero-bio {
+      font-size: 14px;
+      color: #93afc8;
+      line-height: 1.55;
+    }
+
+    .stats-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+    .stat-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 16px 14px;
+      text-align: center;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .stat-label {
+      font-size: 11px;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      margin-bottom: 6px;
+    }
+    .stat-value {
+      font-size: 22px;
+      font-weight: 800;
+      color: var(--success);
+      letter-spacing: -0.5px;
+    }
+
+    .btn-withdraw {
+      display: block;
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: var(--radius);
+      font-size: 15px;
+      font-weight: 700;
+      cursor: pointer;
+      background: linear-gradient(135deg, #4fba74 0%, #38a05d 100%);
+      color: #fff;
+      box-shadow: 0 4px 16px rgba(79,186,116,0.3);
+      transition: opacity 0.15s, transform 0.1s;
+      margin-bottom: 18px;
+      letter-spacing: 0.2px;
+    }
+    .btn-withdraw:active { transform: scale(0.98); }
+
+    .section-title {
+      font-size: 13px;
+      font-weight: 700;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.7px;
+      margin: 18px 0 10px;
+    }
+
+    .chat-list { display: flex; flex-direction: column; gap: 8px; }
+
+    .chat-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+    }
+    .chat-avatar {
+      width: 44px; height: 44px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, #3a6fa8, #5288c1);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 18px;
+      flex-shrink: 0;
+    }
+    .chat-info { flex: 1; min-width: 0; }
+    .chat-fan-name {
+      font-size: 15px;
+      font-weight: 600;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .chat-time {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+    .chat-time-badge {
+      font-size: 11px;
+      font-weight: 700;
+      background: rgba(79,186,116,0.15);
+      color: var(--success);
+      border: 1px solid rgba(79,186,116,0.3);
+      border-radius: 10px;
+      padding: 3px 8px;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+
+    .no-chats {
+      background: var(--card);
+      border-radius: var(--radius);
+      padding: 28px 20px;
+      text-align: center;
+      color: var(--muted);
+      font-size: 14px;
+    }
+    .no-chats-icon { font-size: 36px; margin-bottom: 10px; }
+
+    .rules-card {
+      background: var(--card);
+      border-radius: var(--radius);
+      overflow: hidden;
+      box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      margin-top: 10px;
+    }
+    .rules-header {
+      padding: 14px 16px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      cursor: pointer;
+      user-select: none;
+      -webkit-user-select: none;
+    }
+    .rules-header-text {
+      font-size: 14px;
+      font-weight: 600;
+    }
+    .rules-chevron {
+      font-size: 12px;
+      color: var(--muted);
+      transition: transform 0.25s ease;
+    }
+    .rules-chevron.open { transform: rotate(180deg); }
+    .rules-body {
+      max-height: 0;
+      overflow: hidden;
+      transition: max-height 0.3s ease;
+    }
+    .rules-body.open { max-height: 600px; }
+    .rules-list {
+      padding: 0 16px 16px;
+      list-style: none;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+    }
+    .rules-list li {
+      font-size: 13px;
+      color: #93afc8;
+      line-height: 1.55;
+      padding-left: 20px;
+      position: relative;
+    }
+    .rules-list li::before {
+      content: "•";
+      position: absolute;
+      left: 6px;
+      color: var(--accent);
+    }
   </style>
 </head>
 <body>
@@ -430,13 +638,20 @@ async function init() {
     return;
   }
   try {
-    const [meR, modelsR] = await Promise.all([get('/api/me'), get('/api/models')]);
-    if (!meR.ok || !modelsR.ok) throw new Error('API error');
-    const me     = await meR.json();
-    const models = await modelsR.json();
+    const meR = await get('/api/me');
+    if (!meR.ok) throw new Error('API error');
+    const me = await meR.json();
     userBalance = me.balance_usd || 0;
     document.getElementById('balance-el').textContent = `$${userBalance.toFixed(2)}`;
-    renderGrid(models);
+
+    if (me.user_role === 'model') {
+      await initModelDashboard();
+    } else {
+      const modelsR = await get('/api/models');
+      if (!modelsR.ok) throw new Error('API error');
+      const models = await modelsR.json();
+      renderGrid(models);
+    }
   } catch (e) {
     document.getElementById('content').innerHTML = `
       <div class="empty-state">
@@ -445,6 +660,124 @@ async function init() {
         <div class="empty-sub">Проверь соединение и попробуй снова</div>
       </div>`;
   }
+}
+
+// ── Model Dashboard ───────────────────────────────────────
+
+async function initModelDashboard() {
+  try {
+    const r = await get('/api/model/dashboard');
+    if (!r.ok) throw new Error('dashboard error');
+    const data = await r.json();
+    userBalance = data.balance_usd;
+    document.getElementById('balance-el').textContent = `$${userBalance.toFixed(2)}`;
+    renderModelDashboard(data);
+  } catch (e) {
+    document.getElementById('content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-title">Ошибка загрузки панели</div>
+        <div class="empty-sub">Попробуй позже</div>
+      </div>`;
+  }
+}
+
+function renderModelDashboard(data) {
+  const profile = data.profile || {};
+  const photoHTML = profile.preview_photo
+    ? `<img class="model-hero-photo" src="/api/photo/${encodeURIComponent(profile.preview_photo)}" alt="">`
+    : `<div class="model-hero-placeholder">💄</div>`;
+
+  const metaParts = [];
+  if (profile.age) metaParts.push(`${profile.age} лет`);
+  const metaText = metaParts.join(' · ');
+
+  const chatsHTML = data.active_chats && data.active_chats.length
+    ? data.active_chats.map(c => {
+        const timeStr = c.hours_left > 0
+          ? `${c.hours_left}ч ${c.minutes_left}м`
+          : `${c.minutes_left}м`;
+        return `
+          <div class="chat-card">
+            <div class="chat-avatar">💬</div>
+            <div class="chat-info">
+              <div class="chat-fan-name">${esc(c.fan_name)}</div>
+              <div class="chat-time">Активный чат</div>
+            </div>
+            <div class="chat-time-badge">⏱ ${timeStr}</div>
+          </div>`;
+      }).join('')
+    : `<div class="no-chats">
+         <div class="no-chats-icon">💬</div>
+         Нет активных чатов
+       </div>`;
+
+  document.getElementById('content').innerHTML = `
+    <div class="model-dashboard">
+      <div class="model-hero">
+        ${photoHTML}
+        <div class="model-hero-body">
+          <div class="model-hero-name">${esc(data.name)}</div>
+          ${metaText ? `<div class="model-hero-meta">${esc(metaText)}</div>` : ''}
+          ${profile.description ? `<div class="model-hero-bio">${esc(profile.description)}</div>` : ''}
+        </div>
+      </div>
+
+      <div class="stats-row">
+        <div class="stat-card">
+          <div class="stat-label">Баланс</div>
+          <div class="stat-value">$${data.balance_usd.toFixed(2)}</div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">За 30 дней</div>
+          <div class="stat-value">$${data.monthly_earnings.toFixed(2)}</div>
+        </div>
+      </div>
+
+      <button class="btn-withdraw" onclick="doWithdraw()">💸 Вывести средства</button>
+
+      <div class="section-title">Активные чаты (${data.active_chats ? data.active_chats.length : 0})</div>
+      <div class="chat-list">${chatsHTML}</div>
+
+      <div class="section-title">Правила платформы</div>
+      <div class="rules-card">
+        <div class="rules-header" onclick="toggleRules()">
+          <span class="rules-header-text">📋 Показать правила</span>
+          <span class="rules-chevron" id="rules-chevron">▼</span>
+        </div>
+        <div class="rules-body" id="rules-body">
+          <ul class="rules-list">
+            <li>Отвечай фанатам в течение 24 часов — это сохраняет их лояльность.</li>
+            <li>Запрещено запрашивать личные данные, номера карт или переводы вне платформы.</li>
+            <li>Контент 18+ разрешён только в формате платных медиа через бота.</li>
+            <li>Не раскрывай своё реальное местоположение и личные данные.</li>
+            <li>За нарушения правил аккаунт может быть заблокирован без выплаты баланса.</li>
+            <li>Вывод средств обрабатывается вручную в течение 24–72 часов.</li>
+            <li>Минимальная сумма вывода: $10. Используй команду /withdraw в боте.</li>
+          </ul>
+        </div>
+      </div>
+    </div>`;
+}
+
+function toggleRules() {
+  const body    = document.getElementById('rules-body');
+  const chevron = document.getElementById('rules-chevron');
+  body.classList.toggle('open');
+  chevron.classList.toggle('open');
+}
+
+function doWithdraw() {
+  tg.showPopup({
+    title:   'Вывод средств',
+    message: `Баланс: $${userBalance.toFixed(2)}\n\nНапиши /withdraw в бот, чтобы начать вывод. Минимум $10, обработка 24–72ч.`,
+    buttons: [
+      {id: 'open_bot', type: 'default', text: 'Открыть бот'},
+      {id: 'cancel',   type: 'cancel'},
+    ],
+  }, (btn_id) => {
+    if (btn_id === 'open_bot') tg.close();
+  });
 }
 
 // ── Grid ─────────────────────────────────────────────────
