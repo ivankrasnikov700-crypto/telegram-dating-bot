@@ -743,21 +743,36 @@ def register_admin_handlers(bot):
         if not state.startswith("waiting_media_"):
             bot.send_message(message.chat.id, "❌ Нет активной загрузки медиа")
             return
-        model_id     = int(state.replace("waiting_media_", ""))
-        model        = get_model(model_id)
+        model_id      = int(state.replace("waiting_media_", ""))
+        model         = get_model(model_id)
         if not model:
             return
-        all_media    = get_all_media(model_id)
+        all_media     = get_all_media(model_id)
         preview_media = get_preview_media(model_id)
-        del admin_states[message.from_user.id]
+
+        # Move to TG ID linking step (keep state, don't delete)
+        admin_states[message.from_user.id] = "waiting_tg_id_" + str(model_id)
+
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(
+            "⏭ Пропустить — привяжу позже",
+            callback_data="wizard_skip_link_" + str(model_id)
+        ))
+
         bot.send_message(
             message.chat.id,
-            "🎉 Загрузка завершена!\n\n"
+            "🎉 Медиа загружено!\n\n"
             "👩 Имя: " + model["name"] + "\n"
             "🎂 Возраст: " + str(model["age"]) + " лет\n\n"
             "📸 Всего медиа: " + str(len(all_media)) + "\n"
             "👁 Превью Fan: " + str(len(preview_media)) + " фото\n"
-            "🔒 Premium: " + str(len(all_media) - len(preview_media)) + " файлов"
+            "🔒 Premium: " + str(len(all_media) - len(preview_media)) + " файлов\n\n"
+            "━━━━━━━━━━━━━━━\n"
+            "Последний шаг: введи Telegram ID модели.\n\n"
+            "Попроси модель написать /start боту,\n"
+            "затем узнать свой ID через @userinfobot\n\n"
+            "Введи число (например: 123456789):",
+            reply_markup=markup
         )
 
     # ── Бан / разбан пользователей ──────────
@@ -1254,6 +1269,102 @@ def register_admin_handlers(bot):
             message.chat.id,
             "✅ Видео " + str(position) + " добавлено — 🔒 Premium контент\n"
             "Отправляй следующее или /done"
+        )
+
+    # ── Wizard: ввод Telegram ID модели ──────
+
+    @bot.message_handler(
+        func=lambda msg: (
+            is_admin(msg.from_user.id)
+            and str(admin_states.get(msg.from_user.id, "")).startswith("waiting_tg_id_")
+            and msg.text and not msg.text.startswith("/")
+        )
+    )
+    def process_wizard_tg_id(message):
+        state    = admin_states.get(message.from_user.id, "")
+        model_id = int(state.replace("waiting_tg_id_", ""))
+        tg_uid_str = message.text.strip()
+
+        if not tg_uid_str.isdigit():
+            bot.send_message(
+                message.chat.id,
+                "❌ Telegram ID — только цифры.\n"
+                "Например: 123456789\n\n"
+                "Попробуй ещё раз или нажми «Пропустить»."
+            )
+            return
+
+        tg_uid = int(tg_uid_str)
+        model  = get_model(model_id)
+        if not model:
+            del admin_states[message.from_user.id]
+            bot.send_message(message.chat.id, "❌ Модель не найдена.")
+            return
+
+        user = get_user(tg_uid)
+        if not user:
+            bot.send_message(
+                message.chat.id,
+                "❌ Пользователь " + str(tg_uid) + " не найден.\n\n"
+                "Модель должна сначала написать /start боту.\n"
+                "Попробуй ещё раз после этого."
+            )
+            return
+
+        link_model_telegram(model_id, tg_uid)
+        _set_user_role(tg_uid, "model")
+        del admin_states[message.from_user.id]
+
+        bot.send_message(
+            message.chat.id,
+            "✅ Модель полностью настроена!\n\n"
+            "👩 Профиль: «" + model["name"] + "» (#" + str(model_id) + ")\n"
+            "🔗 TG аккаунт: " + str(tg_uid) + "\n\n"
+            "Фанаты могут начать чат через Mini App."
+        )
+
+        try:
+            bot.send_message(
+                tg_uid,
+                "✅ Твой профиль «" + model["name"] + "» активирован!\n\n"
+                "Когда фанат купит 24-часовой чат — ты получишь уведомление.\n"
+                "Пиши сюда — я доставлю сообщения фанатам.\n\n"
+                "Команды:\n"
+                "/balance — твой баланс\n"
+                "/earnings — статистика\n"
+                "/withdraw — вывод средств\n\n"
+                "❗ Запрещено передавать контакты, ссылки и номера телефона.\n"
+                "3 нарушения = автоматический бан."
+            )
+        except Exception as e:
+            print("[WIZARD] Уведомление модели не доставлено: " + str(e))
+
+        notify_channel(
+            bot,
+            "👩 Новая модель добавлена через wizard\n"
+            "━━━━━━━━━━━━━━━\n"
+            "👩 Профиль: " + model["name"] + " (#" + str(model_id) + ")\n"
+            "🆔 TG User: " + str(tg_uid) + "\n"
+            "👮 Добавил: " + str(message.from_user.id)
+        )
+
+    @bot.callback_query_handler(
+        func=lambda call: call.data.startswith("wizard_skip_link_")
+    )
+    def wizard_skip_link_callback(call):
+        if not is_admin(call.from_user.id):
+            return
+        bot.answer_callback_query(call.id)
+        model_id = int(call.data.replace("wizard_skip_link_", ""))
+        admin_states.pop(call.from_user.id, None)
+        model = get_model(model_id)
+        name  = model["name"] if model else "модель #" + str(model_id)
+        bot.edit_message_text(
+            "⏭ Привязка пропущена.\n\n"
+            "👩 " + name + " (#" + str(model_id) + ") создана без TG аккаунта.\n"
+            "Привязать позже: /linkmodel " + str(model_id) + " TELEGRAM_USER_ID",
+            call.message.chat.id,
+            call.message.message_id
         )
 
     # ── Callback — добавить модель ────────────

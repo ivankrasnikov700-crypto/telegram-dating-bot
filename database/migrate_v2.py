@@ -143,6 +143,27 @@ def create_model_withdrawals(cursor):
     """)
 
 
+@step("Create paid_media table")
+def create_paid_media(cursor):
+    cursor.execute("""
+        CREATE TABLE IF NOT EXISTS paid_media (
+            id              SERIAL PRIMARY KEY,
+            model_user_id   BIGINT NOT NULL,
+            fan_user_id     BIGINT NOT NULL,
+            file_id         TEXT NOT NULL,
+            file_type       TEXT DEFAULT 'photo',
+            price_usd       REAL NOT NULL,
+            preview_file_id TEXT,
+            is_unlocked     INTEGER DEFAULT 0,
+            created_at      BIGINT NOT NULL
+        )
+    """)
+    cursor.execute(
+        "CREATE INDEX IF NOT EXISTS idx_paid_media_fan "
+        "ON paid_media (fan_user_id, is_unlocked)"
+    )
+
+
 def run_migration():
     print("=" * 55)
     print("  Miss Moldova v2 — Database Migration")
