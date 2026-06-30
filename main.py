@@ -4,9 +4,10 @@
 import logging
 import os
 import threading
-import telebot
 import time
-from config import BOT_TOKEN, LTC_ADDRESS, ADMIN_IDS, DATABASE_URL
+
+from config import BOT_TOKEN, LTC_ADDRESS, ADMIN_IDS, DATABASE_URL, MINI_APP_URL
+from bot_instance import bot
 from database import init_db
 from database.models import init_models_db
 from database.reviews import init_reviews_db
@@ -46,8 +47,6 @@ def _check_env():
 
 _check_env()
 
-bot = telebot.TeleBot(BOT_TOKEN)
-
 from handlers.start import register_start_handlers
 from handlers.callback import register_callback_handlers, restore_pending_payments
 from handlers.admin import register_admin_handlers
@@ -86,31 +85,57 @@ def main():
     start_scheduler(bot)
     restore_pending_payments(bot)
 
-    # Start Mini App API server in background thread
-    def _start_api():
-        try:
-            import uvicorn
-            from api.server import app as fastapi_app
-            port = int(os.environ.get("PORT", 8080))
-            print("[API] Mini App server starting on port " + str(port))
-            uvicorn.run(fastapi_app, host="0.0.0.0", port=port, log_level="warning")
-        except Exception as e:
-            print("[API] Failed to start: " + str(e))
-
-    threading.Thread(target=_start_api, daemon=True).start()
+    import uvicorn
+    from api.server import app as fastapi_app
+    port = int(os.environ.get("PORT", 8080))
 
     print("✅ Бот Miss Moldova запущен!")
     print("💳 LTC: " + str(LTC_ADDRESS))
     print("👑 Admins: " + str(ADMIN_IDS))
     logger.info("Bot started")
 
-    while True:
-        try:
-            bot.infinity_polling(timeout=60, long_polling_timeout=60)
-        except Exception as e:
-            print("[ERROR] Бот упал: " + str(e))
-            print("[INFO] Перезапуск через 5 секунд...")
-            time.sleep(5)
+    if MINI_APP_URL:
+        # Webhook mode — FastAPI handles Telegram updates via POST /webhook
+        # Set webhook after uvicorn is ready (background thread with delay)
+        def _setup_webhook():
+            time.sleep(4)  # Wait for uvicorn to bind
+            webhook_url = MINI_APP_URL.rstrip("/") + "/webhook"
+            try:
+                bot.remove_webhook()
+                time.sleep(1)
+                bot.set_webhook(url=webhook_url)
+                print("[BOT] Webhook set: " + webhook_url)
+            except Exception as e:
+                print("[BOT] Webhook setup failed: " + str(e))
+
+        threading.Thread(target=_setup_webhook, daemon=True).start()
+        print("[API] Starting on port " + str(port) + " (webhook mode — no polling)")
+        # uvicorn runs in main thread — keeps process alive
+        uvicorn.run(fastapi_app, host="0.0.0.0", port=port, log_level="warning")
+    else:
+        # Polling mode — local development fallback (MINI_APP_URL not set)
+        def _start_api():
+            try:
+                print("[API] Mini App server starting on port " + str(port))
+                uvicorn.run(fastapi_app, host="0.0.0.0", port=port, log_level="warning")
+            except Exception as e:
+                print("[API] Failed to start: " + str(e))
+
+        threading.Thread(target=_start_api, daemon=True).start()
+        print("[BOT] MINI_APP_URL not set — polling mode (local dev)")
+
+        while True:
+            try:
+                bot.infinity_polling(timeout=60, long_polling_timeout=60)
+            except Exception as e:
+                err = str(e)
+                if "409" in err:
+                    print("[INFO] 409 Conflict — other instance running, waiting 60s...")
+                    time.sleep(60)
+                else:
+                    print("[ERROR] Бот упал: " + err)
+                    print("[INFO] Перезапуск через 5 секунд...")
+                    time.sleep(5)
 
 
 if __name__ == "__main__":

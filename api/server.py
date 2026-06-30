@@ -12,10 +12,11 @@ import io
 import requests as req_lib
 import telebot as _telebot
 from fastapi import FastAPI, HTTPException, Header, Request, UploadFile, File, Form
-from fastapi.responses import StreamingResponse
+from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from config import BOT_TOKEN, ADMIN_IDS
+from bot_instance import bot as _webhook_bot
 from database import register_user, get_usd_balance, get_user, get_connection, _cur, ban_user, unban_user, add_usd_balance
 from database.models import (
     get_all_models, get_model, get_all_media, get_model_by_telegram_id,
@@ -659,6 +660,22 @@ def proxy_photo(file_id: str):
     except Exception as e:
         print("[PHOTO PROXY] " + str(e))
         raise HTTPException(status_code=404, detail="Photo not found")
+
+
+# ─────────────────────────────────────────────
+# Telegram Webhook (replaces long-polling)
+# ─────────────────────────────────────────────
+
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
+    """Receives Telegram updates when webhook mode is active."""
+    try:
+        data = await request.json()
+        update = _telebot.types.Update.de_json(data)
+        _webhook_bot.process_new_updates([update])
+    except Exception as e:
+        print("[WEBHOOK] Error processing update: " + str(e))
+    return JSONResponse({"ok": True})
 
 
 # Static files — must be mounted LAST (catches everything not matched above)

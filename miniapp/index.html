@@ -733,7 +733,7 @@
 
 <div class="header">
   <span class="header-title">👑 Miss Moldova</span>
-  <span class="balance-pill" id="balance-el">$0.00</span>
+  <span class="balance-pill" id="balance-el" onclick="showTopupMenu()" style="cursor:pointer;" title="Пополнить">$0.00 +</span>
 </div>
 
 <div id="content">
@@ -757,8 +757,8 @@
       <button class="btn-action buy" id="btn-chat" onclick="startChat()">
         💬 Начать чат ($5 / 24ч)
       </button>
-      <div class="balance-low" id="balance-low">
-        Пополни баланс в боте — нужно $5
+      <div class="balance-low" id="balance-low" onclick="showTopupMenu()" style="cursor:pointer;">
+        💳 Пополнить баланс — нужно $5 для чата
       </div>
     </div>
   </div>
@@ -1643,6 +1643,73 @@ function wizardFinish() {
   _wizardModelId = null;
   _wizardStep    = 0;
   switchAdminTab('models');
+}
+
+// ── Fan Top-up ────────────────────────────────────────────
+
+function showTopupMenu() {
+  tg.HapticFeedback.selectionChanged();
+  tg.showPopup({
+    title: 'Пополнить баланс',
+    message: 'Выбери способ пополнения:',
+    buttons: [
+      {id: 'crypto', type: 'default', text: '💎 CryptoBot (USDT)'},
+      {id: 'ltc',    type: 'default', text: '₿ LTC (в боте @MissMoldovaBot)'},
+      {id: 'cancel', type: 'cancel'},
+    ],
+  }, (btnId) => {
+    if (btnId === 'ltc') { tg.close(); return; }
+    if (btnId === 'crypto') showCryptoBotTopup();
+  });
+}
+
+function showCryptoBotTopup() {
+  tg.showPopup({
+    title: 'Сумма пополнения',
+    message: 'Выбери сумму в USDT:',
+    buttons: [
+      {id: '10',  type: 'default', text: '$10 USDT'},
+      {id: '25',  type: 'default', text: '$25 USDT'},
+      {id: '50',  type: 'default', text: '$50 USDT'},
+      {id: 'cancel', type: 'cancel'},
+    ],
+  }, async (btnId) => {
+    if (!btnId || btnId === 'cancel') return;
+    const amount = parseInt(btnId);
+    try {
+      const r = await post('/api/topup/cryptobot', {amount_usd: amount});
+      const d = await apiJson(r);
+      tg.openLink(d.pay_url);
+      showToast('Оплати в CryptoBot — баланс обновится автоматически', '');
+      pollCryptoBotInvoice(d.invoice_id, amount);
+    } catch(e) {
+      showToast('❌ ' + e.message, 'error');
+    }
+  });
+}
+
+let _pollStop = false;
+async function pollCryptoBotInvoice(invoiceId, amount) {
+  _pollStop = false;
+  for (let i = 0; i < 72 && !_pollStop; i++) {
+    await new Promise(res => setTimeout(res, 5000));
+    try {
+      const r  = await get(`/api/topup/cryptobot/${invoiceId}/status`);
+      const d  = await apiJson(r);
+      if (d.status === 'paid') {
+        userBalance += amount;
+        document.getElementById('balance-el').textContent = '$' + userBalance.toFixed(2);
+        if (userBalance >= 5) document.getElementById('balance-low').style.display = 'none';
+        showToast('✅ Баланс пополнен на $' + amount + '!', 'success');
+        tg.HapticFeedback.notificationOccurred('success');
+        return;
+      }
+      if (d.status === 'expired') {
+        showToast('❌ Время оплаты истекло', 'error');
+        return;
+      }
+    } catch(_) { /* network glitch — continue polling */ }
+  }
 }
 
 // ── Toast ─────────────────────────────────────────────────
