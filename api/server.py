@@ -672,9 +672,13 @@ async def telegram_webhook(request: Request):
     try:
         data = await request.json()
         update = _telebot.types.Update.de_json(data)
-        _webhook_bot.process_new_updates([update])
+        import asyncio
+        # Fire-and-forget in thread pool — bot handlers are sync/blocking, must not run in event loop
+        asyncio.get_event_loop().run_in_executor(
+            None, _webhook_bot.process_new_updates, [update]
+        )
     except Exception as e:
-        print("[WEBHOOK] Error processing update: " + str(e))
+        print("[WEBHOOK] Error: " + str(e))
     return JSONResponse({"ok": True})
 
 
