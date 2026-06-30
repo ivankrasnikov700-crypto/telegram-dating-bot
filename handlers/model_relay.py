@@ -1,5 +1,7 @@
+import io
 import re
 import time
+import requests
 from database import get_user, get_connection, increment_warning
 from database.chat_sessions import (
     get_model_active_chats,
@@ -7,7 +9,9 @@ from database.chat_sessions import (
     deactivate_all_model_chats,
 )
 from database.models import get_model
+from database.paid_media import create_paid_media
 from utils.notify import notify_channel
+from config import BOT_TOKEN
 
 # ─────────────────────────────────────────────
 # Anti-fraud patterns (compiled once at import)
@@ -221,6 +225,11 @@ def get_model_display_name(model_id: int) -> str:
 # model_id → {"text": str, "timestamp": int}
 _pending_model_messages = {}
 
+# model_id → {"file_id": str, "file_type": str, "timestamp": int}
+_pending_media = {}
+# set of model_ids currently waiting for price input
+_awaiting_price: set = set()
+
 
 def _build_fan_selector(bot, model_id: int, text: str, chats: list, message_id: int = None):
     """When model has multiple active fans, ask them to pick a recipient."""
@@ -259,9 +268,48 @@ def _build_fan_selector(bot, model_id: int, text: str, chats: list, message_id: 
 def register_model_relay_handlers(bot):
     """
     Registers:
-    1. Message handler — intercepts all text from models, runs anti-fraud relay
-    2. Callback handler — fan selector when model has multiple active chats
+    1. Photo/video handler — model sends paid media, prompts for price
+    2. Text handler — either price input (FSM) or anti-fraud text relay
+    3. Callback handler — fan selector when model has multiple active chats
     """
+
+    @bot.message_handler(
+        content_types=['photo', 'video'],
+        func=lambda msg: _is_model_message(msg)
+    )
+    def model_media_handler(message):
+        model_id = message.from_user.id
+
+        chats = get_model_active_chats(model_id)
+        if not chats:
+            bot.send_message(
+                model_id,
+                "📭 У тебя нет активных чатов — некому отправить медиа."
+            )
+            return
+
+        if message.content_type == 'photo':
+            file_id   = message.photo[-1].file_id
+            file_type = 'photo'
+        else:
+            file_id   = message.video.file_id
+            file_type = 'video'
+
+        _pending_media[model_id] = {
+            "file_id":   file_id,
+            "file_type": file_type,
+            "timestamp": int(time.time()),
+        }
+        _awaiting_price.add(model_id)
+
+        type_label = "фото" if file_type == "photo" else "видео"
+        bot.send_message(
+            model_id,
+            "🔒 Платное " + type_label + "\n\n"
+            "Укажи цену в USD (например: 5):\n"
+            "Минимум $1, фанат увидит размытое превью + замок 🔒\n\n"
+            "Введи 0 — отправить бесплатно как обычное сообщение."
+        )
 
     @bot.message_handler(
         content_types=['text'],
@@ -274,6 +322,40 @@ def register_model_relay_handlers(bot):
         if text.startswith('/'):
             return  # Let command handlers take over
 
+        # Price FSM: model is setting a price for pending media
+        if model_id in _awaiting_price:
+            _awaiting_price.discard(model_id)
+            pending = _pending_media.pop(model_id, None)
+
+            if not pending or int(time.time()) - pending["timestamp"] > 300:
+                bot.send_message(model_id, "⏰ Время вышло. Отправь медиа заново.")
+                return
+
+            price_str = text.strip().replace(",", ".").replace("$", "")
+            try:
+                price = float(price_str)
+            except ValueError:
+                bot.send_message(model_id, "❌ Введи число, например: 5")
+                _pending_media[model_id] = pending
+                _awaiting_price.add(model_id)
+                return
+
+            if price < 0:
+                price = 0
+
+            chats = get_model_active_chats(model_id)
+            if not chats:
+                bot.send_message(model_id, "📭 Нет активных чатов — некому отправить.")
+                return
+
+            if price == 0:
+                # Free — send directly
+                _send_free_media(bot, model_id, pending, chats)
+            else:
+                _send_paid_media(bot, model_id, pending, chats, price)
+            return
+
+        # Normal text relay
         chats = get_model_active_chats(model_id)
 
         if not chats:
@@ -352,3 +434,138 @@ def _is_model_message(message) -> bool:
         return user.get("user_role") == "model" and not user.get("is_banned", 0)
     except Exception:
         return False
+
+
+def _blur_photo(file_id: str) -> bytes | None:
+    """Download a Telegram photo, apply Gaussian blur, return JPEG bytes."""
+    try:
+        from PIL import Image, ImageFilter
+        import telebot
+        # We need to download via Telegram API
+        url = "https://api.telegram.org/bot" + BOT_TOKEN + "/getFile?file_id=" + file_id
+        resp = requests.get(url, timeout=15)
+        data = resp.json()
+        file_path = data["result"]["file_path"]
+        dl_url    = "https://api.telegram.org/file/bot" + BOT_TOKEN + "/" + file_path
+        img_resp  = requests.get(dl_url, timeout=30)
+        img       = Image.open(io.BytesIO(img_resp.content)).convert("RGB")
+        blurred   = img.filter(ImageFilter.GaussianBlur(radius=20))
+        buf       = io.BytesIO()
+        blurred.save(buf, format="JPEG", quality=70)
+        buf.seek(0)
+        return buf
+    except Exception as e:
+        print("[PAID MEDIA] Blur error: " + str(e))
+        return None
+
+
+def _send_free_media(bot, model_id: int, pending: dict, chats: list):
+    """Relay free photo/video to all active fans."""
+    model_name = get_model_display_name(model_id)
+    file_id    = pending["file_id"]
+    file_type  = pending["file_type"]
+
+    for chat in chats:
+        fan_id = chat["fan_id"]
+        try:
+            if file_type == "video":
+                bot.send_video(fan_id, file_id, caption="🎬 " + model_name)
+            else:
+                bot.send_photo(fan_id, file_id, caption="📸 " + model_name)
+        except Exception as e:
+            print("[RELAY] Не удалось доставить медиа фанату " + str(fan_id) + ": " + str(e))
+
+    bot.send_message(model_id, "✅ Медиа отправлено фанатам (" + str(len(chats)) + " чел.)")
+
+
+def _send_paid_media(bot, model_id: int, pending: dict, chats: list, price: float):
+    """Create blurred preview, send to all active fans as paid media."""
+    from telebot import types
+
+    file_id   = pending["file_id"]
+    file_type = pending["file_type"]
+    price_str = "$" + str(round(price, 2))
+
+    # Prepare blurred bytes once (photos only)
+    blurred_file_id = None
+    blurred_buf     = _blur_photo(file_id) if file_type == "photo" else None
+
+    sent_count = 0
+    media_ids  = []
+
+    for chat in chats:
+        fan_id   = chat["fan_id"]
+        media_id = create_paid_media(model_id, fan_id, file_id, file_type, price, blurred_file_id)
+        media_ids.append(media_id)
+
+        markup = types.InlineKeyboardMarkup()
+        markup.add(types.InlineKeyboardButton(
+            "🔓 Разблокировать за " + price_str,
+            callback_data="unlock_" + str(media_id)
+        ))
+
+        try:
+            if file_type == "video":
+                bot.send_message(
+                    fan_id,
+                    "🎬 Эксклюзивное видео — закрыто 🔒\n"
+                    "Цена разблокировки: " + price_str,
+                    reply_markup=markup
+                )
+            elif blurred_file_id is not None:
+                # Use cached Telegram file_id from the first upload
+                bot.send_photo(
+                    fan_id,
+                    blurred_file_id,
+                    caption="🔒 Закрытое фото — " + price_str,
+                    reply_markup=markup
+                )
+            elif blurred_buf is not None:
+                # First upload — send bytes, cache resulting file_id
+                blurred_buf.seek(0)
+                sent = bot.send_photo(
+                    fan_id,
+                    blurred_buf,
+                    caption="🔒 Закрытое фото — " + price_str,
+                    reply_markup=markup
+                )
+                blurred_file_id = sent.photo[-1].file_id
+            else:
+                # Pillow unavailable — text fallback
+                bot.send_message(
+                    fan_id,
+                    "📸 Закрытое фото — " + price_str + " 🔒",
+                    reply_markup=markup
+                )
+            sent_count += 1
+        except Exception as e:
+            print("[PAID MEDIA] Ошибка отправки фанату " + str(fan_id) + ": " + str(e))
+
+    # Backfill preview_file_id for all records now that we have it
+    if blurred_file_id:
+        for mid in media_ids:
+            _update_preview_file_id(mid, blurred_file_id)
+
+    type_label = "фото" if file_type == "photo" else "видео"
+    bot.send_message(
+        model_id,
+        "✅ Платное " + type_label + " отправлено!\n"
+        "💰 Цена: " + price_str + "\n"
+        "👥 Фанатов получили: " + str(sent_count) + "\n\n"
+        "Когда фанат разблокирует — получишь $" + str(round(price * 0.70, 2)) + " 💵"
+    )
+
+
+def _update_preview_file_id(media_id: int, preview_file_id: str):
+    try:
+        from database import get_connection
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "UPDATE paid_media SET preview_file_id = %s WHERE id = %s",
+            (preview_file_id, media_id)
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("[PAID MEDIA] preview_file_id update error: " + str(e))
