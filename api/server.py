@@ -15,7 +15,7 @@ from fastapi import FastAPI, HTTPException, Header, Request, UploadFile, File, F
 from fastapi.responses import StreamingResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from config import BOT_TOKEN, ADMIN_IDS
+from config import BOT_TOKEN, ADMIN_IDS, MINI_APP_URL
 from bot_instance import bot as _webhook_bot
 from database import register_user, get_usd_balance, get_user, get_connection, _cur, ban_user, unban_user, add_usd_balance
 from database.models import (
@@ -30,6 +30,7 @@ from database.chat_sessions import (
     InsufficientBalanceError,
     ActiveChatExistsError,
 )
+from database.paid_media import create_paid_media, get_paid_media, unlock_and_pay
 from database.withdrawals import get_pending_withdrawals, get_withdrawal, process_withdrawal
 from utils.cryptobot import is_configured as _cp_configured, create_invoice, get_invoice, transfer as cp_transfer, usd_to_asset
 
@@ -77,6 +78,48 @@ def _auth(authorization: str | None) -> dict:
     if not user:
         raise HTTPException(status_code=401, detail="Invalid initData")
     return user
+
+
+# ─────────────────────────────────────────────
+# Chat helpers: notifications + media serialization
+# ─────────────────────────────────────────────
+
+def _notify_chat_message(target_tg_id: int, deep_link_id: int, sender_label: str, preview_text: str):
+    """Sends a Telegram DM with a button that deep-links back into the chat in the Mini App."""
+    text = sender_label + ":\n\n" + preview_text
+    markup = None
+    if MINI_APP_URL:
+        try:
+            url = MINI_APP_URL.rstrip("/") + "?chat=" + str(deep_link_id)
+            markup = _telebot.types.InlineKeyboardMarkup()
+            markup.add(_telebot.types.InlineKeyboardButton(
+                "💬 Открыть чат", web_app=_telebot.types.WebAppInfo(url=url)
+            ))
+        except Exception:
+            markup = None
+    try:
+        _webhook_bot.send_message(target_tg_id, text, reply_markup=markup)
+    except Exception as e:
+        print("[CHAT NOTIFY] Не удалось уведомить " + str(target_tg_id) + ": " + str(e))
+
+
+def _media_payload(media_id: int, viewer_is_owner: bool) -> dict | None:
+    """Builds the media block for a chat message: locked preview or full unlocked URL."""
+    media = get_paid_media(media_id)
+    if not media:
+        return None
+    unlocked = viewer_is_owner or bool(media.get("is_unlocked"))
+    payload = {
+        "media_id":  media["id"],
+        "file_type": media.get("file_type", "photo"),
+        "price_usd": round(float(media.get("price_usd") or 0), 2),
+        "unlocked":  unlocked,
+    }
+    if unlocked:
+        payload["url"] = "/api/photo/" + media["file_id"]
+    elif media.get("preview_file_id"):
+        payload["preview_url"] = "/api/photo/" + media["preview_file_id"]
+    return payload
 
 
 # ─────────────────────────────────────────────
@@ -194,6 +237,7 @@ async def fan_send_message(model_id: int, request: Request, authorization: str =
         conn.commit()
     finally:
         conn.close()
+    _notify_chat_message(tg_uid, fan_id, "💌 Фанат", content[:300])
     return {"ok": True}
 
 
@@ -215,13 +259,19 @@ def fan_get_messages(model_id: int, since: int = 0, authorization: str = Header(
         if not row:
             return []
         cur.execute(
-            "SELECT id, sender_role, content, created_at FROM chat_messages WHERE chat_id=%s AND id>%s ORDER BY created_at ASC LIMIT 100",
+            "SELECT id, sender_role, content, created_at, media_id FROM chat_messages WHERE chat_id=%s AND id>%s ORDER BY created_at ASC LIMIT 100",
             (row["chat_id"], since)
         )
         msgs = cur.fetchall()
     finally:
         conn.close()
-    return [{"id": m["id"], "role": m["sender_role"], "text": m["content"], "ts": m["created_at"]} for m in msgs]
+    result = []
+    for m in msgs:
+        item = {"id": m["id"], "role": m["sender_role"], "text": m["content"], "ts": m["created_at"]}
+        if m.get("media_id"):
+            item["media"] = _media_payload(m["media_id"], viewer_is_owner=False)
+        result.append(item)
+    return result
 
 
 @app.post("/api/model/chat/{fan_id}/send")
@@ -248,6 +298,10 @@ async def model_send_message(fan_id: int, request: Request, authorization: str =
         conn.commit()
     finally:
         conn.close()
+    model_profile = get_model_by_telegram_id(model_user_id)
+    model_catalog_id = model_profile["id"] if model_profile else model_user_id
+    model_name = model_profile["name"] if model_profile else "Модель"
+    _notify_chat_message(fan_id, model_catalog_id, "💌 " + model_name, content[:300])
     return {"ok": True}
 
 
@@ -265,13 +319,162 @@ def model_get_messages(fan_id: int, since: int = 0, authorization: str = Header(
         if not row:
             return []
         cur.execute(
-            "SELECT id, sender_role, content, created_at FROM chat_messages WHERE chat_id=%s AND id>%s ORDER BY created_at ASC LIMIT 100",
+            "SELECT id, sender_role, content, created_at, media_id FROM chat_messages WHERE chat_id=%s AND id>%s ORDER BY created_at ASC LIMIT 100",
             (row["chat_id"], since)
         )
         msgs = cur.fetchall()
     finally:
         conn.close()
-    return [{"id": m["id"], "role": m["sender_role"], "text": m["content"], "ts": m["created_at"]} for m in msgs]
+    result = []
+    for m in msgs:
+        item = {"id": m["id"], "role": m["sender_role"], "text": m["content"], "ts": m["created_at"]}
+        if m.get("media_id"):
+            item["media"] = _media_payload(m["media_id"], viewer_is_owner=True)
+        result.append(item)
+    return result
+
+
+@app.post("/api/model/chat/{fan_id}/send_media")
+async def model_send_media(
+    fan_id: int,
+    authorization: str = Header(None),
+    file: UploadFile = File(...),
+    price: float = Form(0),
+):
+    """Model attaches a photo/video to the chat. If price > 0, it's blurred until the fan pays."""
+    user = _auth(authorization)
+    model_user_id = int(user["id"])
+    model_profile = get_model_by_telegram_id(model_user_id)
+    if not model_profile:
+        raise HTTPException(status_code=403, detail="Not a model")
+
+    conn = get_connection(); cur = _cur(conn)
+    try:
+        cur.execute(
+            "SELECT chat_id FROM model_chats WHERE fan_id=%s AND model_id=%s AND is_active=1 AND expires_at>%s",
+            (fan_id, model_user_id, int(time.time()))
+        )
+        row = cur.fetchone()
+        if not row:
+            raise HTTPException(status_code=403, detail="No active chat")
+        chat_id = row["chat_id"]
+    finally:
+        conn.close()
+
+    data = await file.read()
+    if len(data) > 20 * 1024 * 1024:
+        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
+    content_type = (file.content_type or "").lower()
+    file_type = "video" if content_type.startswith("video") else "photo"
+    price = max(0.0, round(float(price), 2))
+
+    try:
+        tbot = _telebot.TeleBot(BOT_TOKEN)
+        admin_id = ADMIN_IDS[0]
+        if file_type == "video":
+            msg = tbot.send_video(admin_id, io.BytesIO(data))
+            full_file_id = msg.video.file_id
+        else:
+            msg = tbot.send_photo(admin_id, io.BytesIO(data))
+            full_file_id = msg.photo[-1].file_id
+        try:
+            tbot.delete_message(admin_id, msg.message_id)
+        except Exception:
+            pass
+
+        preview_file_id = None
+        if price > 0 and file_type == "photo":
+            try:
+                from PIL import Image, ImageFilter
+                img = Image.open(io.BytesIO(data)).convert("RGB")
+                blurred = img.filter(ImageFilter.GaussianBlur(radius=20))
+                buf = io.BytesIO()
+                blurred.save(buf, format="JPEG", quality=70)
+                buf.seek(0)
+                pmsg = tbot.send_photo(admin_id, buf)
+                preview_file_id = pmsg.photo[-1].file_id
+                try:
+                    tbot.delete_message(admin_id, pmsg.message_id)
+                except Exception:
+                    pass
+            except Exception as e:
+                print("[CHAT MEDIA] Blur error: " + str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Upload failed: " + str(e))
+
+    media_id = create_paid_media(model_user_id, fan_id, full_file_id, file_type, price, preview_file_id)
+    if price <= 0:
+        conn = get_connection()
+        conn.cursor().execute("UPDATE paid_media SET is_unlocked = 1 WHERE id = %s", (media_id,))
+        conn.commit(); conn.close()
+
+    conn = get_connection(); cur2 = conn.cursor()
+    cur2.execute(
+        "INSERT INTO chat_messages (chat_id, sender_id, sender_role, content, created_at, media_id) "
+        "VALUES (%s,%s,'model',%s,%s,%s)",
+        (chat_id, model_user_id, "", int(time.time()), media_id)
+    )
+    conn.commit(); conn.close()
+
+    label = "🔒 Платное " + ("видео" if file_type == "video" else "фото") if price > 0 else \
+            ("🎬 Видео" if file_type == "video" else "📸 Фото")
+    _notify_chat_message(fan_id, model_profile["id"], "💌 " + model_profile.get("name", "Модель"), label)
+
+    return {"ok": True, "media_id": media_id}
+
+
+@app.post("/api/chat/media/{media_id}/unlock")
+def fan_unlock_media(media_id: int, authorization: str = Header(None)):
+    user = _auth(authorization)
+    fan_id = int(user["id"])
+    media = get_paid_media(media_id)
+    if not media or media["fan_user_id"] != fan_id:
+        raise HTTPException(status_code=404, detail="Not found")
+    if media["is_unlocked"]:
+        return {"ok": True, "url": "/api/photo/" + media["file_id"]}
+
+    ok, result = unlock_and_pay(media_id, fan_id)
+    if not ok:
+        if result == "insufficient":
+            raise HTTPException(status_code=402, detail="Insufficient balance")
+        if result == "already_unlocked":
+            media = get_paid_media(media_id)
+            return {"ok": True, "url": "/api/photo/" + media["file_id"]}
+        raise HTTPException(status_code=500, detail="Unlock failed")
+
+    try:
+        price = float(result["price_usd"])
+        model_id = result["model_user_id"]
+        _webhook_bot.send_message(
+            model_id,
+            "💰 Фанат разблокировал твоё медиа в чате!\n💵 Твой заработок: $" + str(round(price * 0.70, 2))
+        )
+    except Exception as e:
+        print("[CHAT MEDIA] Не удалось уведомить модель: " + str(e))
+
+    return {"ok": True, "url": "/api/photo/" + result["file_id"]}
+
+
+@app.get("/api/me/chats")
+def fan_chats_list(authorization: str = Header(None)):
+    user = _auth(authorization)
+    fan_id = int(user["id"])
+    chats = get_fan_active_chats(fan_id)
+    now = int(time.time())
+    result = []
+    for c in chats:
+        model = get_model_by_telegram_id(c["model_id"])
+        if not model:
+            continue
+        remaining = max(0, int(c["expires_at"]) - now)
+        result.append({
+            "model_id":      model["id"],
+            "name":          model.get("name", "Модель"),
+            "preview_photo": model.get("preview_photo"),
+            "hours_left":    remaining // 3600,
+            "minutes_left":  (remaining % 3600) // 60,
+        })
+    return result
 
 
 @app.get("/api/models")

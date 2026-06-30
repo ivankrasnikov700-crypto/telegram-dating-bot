@@ -521,6 +521,32 @@
     .chat-input-bar { padding:10px 12px; background:var(--card); display:flex; gap:8px; align-items:flex-end; border-top:1px solid rgba(255,255,255,0.07); flex:none; }
     .chat-input { flex:1; padding:9px 13px; border-radius:20px; border:1px solid rgba(255,255,255,0.12); background:var(--bg); color:var(--text); font-size:14px; resize:none; max-height:100px; outline:none; font-family:inherit; }
     .chat-send-btn { width:40px; height:40px; border-radius:50%; background:var(--accent); border:none; color:#fff; font-size:20px; cursor:pointer; flex:none; display:flex; align-items:center; justify-content:center; }
+    .chat-attach-btn { width:40px; height:40px; border-radius:50%; background:var(--bg); border:1px solid rgba(255,255,255,0.12); color:var(--text); font-size:18px; cursor:pointer; flex:none; display:flex; align-items:center; justify-content:center; }
+
+    .msg-media { padding:0; overflow:hidden; }
+    .msg-media-img, .msg-media video { display:block; width:100%; max-width:220px; border-radius:14px; }
+    .msg-media-locked { position:relative; width:220px; max-width:60vw; border-radius:14px; overflow:hidden; cursor:pointer; }
+    .msg-media-locked img { width:100%; display:block; filter:blur(18px); transform:scale(1.1); }
+    .msg-media-locked-placeholder { width:220px; max-width:60vw; height:160px; background:rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; font-size:40px; }
+    .msg-media-lock-overlay { position:absolute; inset:0; display:flex; flex-direction:column; align-items:center; justify-content:center; gap:6px; background:rgba(0,0,0,0.35); color:#fff; text-align:center; padding:10px; }
+    .msg-media-lock-overlay .lock-icon { font-size:26px; }
+    .msg-media-unlock-btn { margin-top:4px; padding:7px 14px; border-radius:16px; border:none; background:var(--accent); color:#fff; font-size:13px; font-weight:600; cursor:pointer; }
+    .msg-media-caption { padding:8px 12px 4px; font-size:13px; }
+
+    .media-form-overlay { padding:10px 14px; background:var(--card); border-top:1px solid rgba(255,255,255,0.08); display:flex; flex-direction:column; gap:8px; flex:none; }
+    .media-form-preview { display:flex; align-items:center; gap:10px; }
+    .media-form-preview img { width:52px; height:52px; object-fit:cover; border-radius:10px; }
+    .media-form-row { display:flex; gap:8px; align-items:center; }
+    .media-form-row input[type=number] { flex:1; padding:9px 12px; border-radius:10px; border:1px solid rgba(255,255,255,0.12); background:var(--bg); color:var(--text); font-size:14px; }
+    .media-form-row button { padding:9px 14px; border-radius:10px; border:none; font-size:13px; font-weight:600; cursor:pointer; }
+    .media-form-send { background:var(--accent); color:#fff; }
+    .media-form-cancel { background:var(--bg); color:var(--muted); border:1px solid rgba(255,255,255,0.1) !important; }
+    .media-form-hint { font-size:12px; color:var(--muted); }
+
+    /* ── Fan tabs ───────────────────────────────────── */
+    .fan-tabs { display:flex; gap:8px; padding:10px 16px 2px; }
+    .fan-tab { flex:1; text-align:center; padding:9px 0; border-radius:12px; background:var(--card); color:var(--muted); font-size:14px; font-weight:600; cursor:pointer; }
+    .fan-tab.active { background:var(--accent); color:#fff; }
 
     .rules-card {
       background: var(--card);
@@ -824,6 +850,9 @@ async function init() {
       </div>`;
     return;
   }
+  const params = new URLSearchParams(location.search);
+  const deepChatRaw = params.get('chat');
+  const deepChat = deepChatRaw ? parseInt(deepChatRaw) : null;
   try {
     const meR = await get('/api/me');
     if (!meR.ok) throw new Error('API error');
@@ -834,12 +863,9 @@ async function init() {
     if (me.is_admin) {
       await initAdminPanel();
     } else if (me.user_role === 'model') {
-      await initModelDashboard();
+      await initModelDashboard(deepChat);
     } else {
-      const modelsR = await get('/api/models');
-      if (!modelsR.ok) throw new Error('API error');
-      const models = await modelsR.json();
-      renderGrid(models);
+      await initFanShell(deepChat);
     }
   } catch (e) {
     document.getElementById('content').innerHTML = `
@@ -851,9 +877,101 @@ async function init() {
   }
 }
 
+// ── Fan shell (tabs: Модели / Чаты) ───────────────────────
+
+let fanActiveTab = 'models';
+
+async function initFanShell(deepModelId) {
+  if (deepModelId) {
+    try {
+      const r = await get(`/api/models/${deepModelId}`);
+      if (r.ok) {
+        const m = await apiJson(r);
+        openChat(deepModelId, m.name || 'Модель', 'fan');
+        return;
+      }
+    } catch (e) {}
+  }
+  fanActiveTab = 'models';
+  await renderFanShell();
+}
+
+async function renderFanShell() {
+  document.getElementById('content').innerHTML = `
+    <div class="fan-tabs">
+      <div class="fan-tab ${fanActiveTab === 'models' ? 'active' : ''}" onclick="switchFanTab('models')">👭 Модели</div>
+      <div class="fan-tab ${fanActiveTab === 'chats' ? 'active' : ''}" onclick="switchFanTab('chats')">💬 Чаты</div>
+    </div>
+    <div id="fan-tab-content"></div>`;
+  if (fanActiveTab === 'models') {
+    await loadFanModelsTab();
+  } else {
+    await loadFanChatsTab();
+  }
+}
+
+function switchFanTab(tab) {
+  if (fanActiveTab === tab) return;
+  fanActiveTab = tab;
+  renderFanShell();
+}
+
+async function loadFanModelsTab() {
+  try {
+    const modelsR = await get('/api/models');
+    if (!modelsR.ok) throw new Error('API error');
+    const models = await modelsR.json();
+    renderGrid(models);
+  } catch (e) {
+    document.getElementById('fan-tab-content').innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-title">Ошибка загрузки</div>
+      </div>`;
+  }
+}
+
+async function loadFanChatsTab() {
+  const host = document.getElementById('fan-tab-content');
+  try {
+    const r = await get('/api/me/chats');
+    const chats = await apiJson(r);
+    if (!chats || !chats.length) {
+      host.innerHTML = `
+        <div class="no-chats" style="margin:14px 16px;">
+          <div class="no-chats-icon">💬</div>
+          Нет активных чатов.<br>Открой анкету модели и купи чат на 24ч.
+        </div>`;
+      return;
+    }
+    const html = chats.map(c => {
+      const timeStr = c.hours_left > 0 ? `${c.hours_left}ч ${c.minutes_left}м` : `${c.minutes_left}м`;
+      const avatar = c.preview_photo
+        ? `<img src="/api/photo/${encodeURIComponent(c.preview_photo)}" style="width:100%;height:100%;object-fit:cover;border-radius:50%;">`
+        : `💬`;
+      return `
+        <div class="chat-card" onclick="openChat(${c.model_id}, '${esc(c.name)}', 'fan')" style="cursor:pointer;">
+          <div class="chat-avatar">${avatar}</div>
+          <div class="chat-info">
+            <div class="chat-fan-name">${esc(c.name)}</div>
+            <div class="chat-time">Активный чат · ⏱ ${timeStr}</div>
+          </div>
+          <div style="color:var(--accent);font-size:20px;flex:none;">›</div>
+        </div>`;
+    }).join('');
+    host.innerHTML = `<div class="chat-list" style="margin-top:6px;">${html}</div>`;
+  } catch (e) {
+    host.innerHTML = `
+      <div class="empty-state">
+        <div class="empty-icon">⚠️</div>
+        <div class="empty-title">Ошибка загрузки</div>
+      </div>`;
+  }
+}
+
 // ── Model Dashboard ───────────────────────────────────────
 
-async function initModelDashboard() {
+async function initModelDashboard(deepFanId) {
   try {
     const r = await get('/api/model/dashboard');
     if (!r.ok) throw new Error('dashboard error');
@@ -861,6 +979,10 @@ async function initModelDashboard() {
     userBalance = data.balance_usd;
     document.getElementById('balance-el').textContent = `$${userBalance.toFixed(2)}`;
     renderModelDashboard(data);
+    if (deepFanId && data.active_chats) {
+      const chat = data.active_chats.find(c => c.fan_id === deepFanId);
+      if (chat) openChat(chat.fan_id, chat.fan_name, 'model');
+    }
   } catch (e) {
     document.getElementById('content').innerHTML = `
       <div class="empty-state">
@@ -971,10 +1093,17 @@ function doWithdraw() {
 
 // ── In-app Chat ──────────────────────────────────────────
 
+let _pendingMediaFile = null;
+
 function openChat(partnerId, partnerName, role) {
   if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
   chatLastMsgId = 0;
+  _pendingMediaFile = null;
   chatContext = {role, partnerId, partnerName};
+  const attachBtn = role === 'model'
+    ? `<button class="chat-attach-btn" onclick="chatAttachClick()" title="Прикрепить файл">📎</button>
+       <input type="file" id="chat-media-input" accept="image/*,video/*" style="display:none" onchange="chatMediaFileSelected(this)">`
+    : '';
   document.getElementById('content').innerHTML = `
     <div class="chat-screen">
       <div class="chat-header">
@@ -982,7 +1111,9 @@ function openChat(partnerId, partnerName, role) {
         <div class="chat-partner-name">${esc(partnerName)}</div>
       </div>
       <div class="chat-messages" id="chat-msgs"></div>
+      <div id="media-form-slot"></div>
       <div class="chat-input-bar">
+        ${attachBtn}
         <textarea class="chat-input" id="chat-input" placeholder="Сообщение..." rows="1"
           onkeydown="if(event.key==='Enter'&&!event.shiftKey){event.preventDefault();chatSend();}"></textarea>
         <button class="chat-send-btn" onclick="chatSend()">➤</button>
@@ -990,6 +1121,47 @@ function openChat(partnerId, partnerName, role) {
     </div>`;
   chatPollInterval = setInterval(chatPoll, 3000);
   chatPoll();
+}
+
+function _buildMsgBubble(m, isMine) {
+  const timeStr = new Date(m.ts * 1000).toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'});
+  if (m.media) {
+    const med = m.media;
+    let inner = '';
+    if (med.unlocked) {
+      if (med.file_type === 'video') {
+        inner = `<video src="${med.url}" controls style="width:100%;max-width:220px;border-radius:12px;"></video>`;
+      } else {
+        inner = `<img src="${med.url}" style="width:100%;max-width:220px;border-radius:12px;display:block;">`;
+      }
+    } else if (med.preview_url) {
+      inner = `
+        <div class="msg-media-locked">
+          <img src="${med.preview_url}">
+          <div class="msg-media-lock-overlay">
+            <span class="lock-icon">🔒</span>
+            <button class="msg-media-unlock-btn" onclick="unlockMedia(${med.media_id}, this)">
+              Открыть за $${med.price_usd.toFixed(2)}
+            </button>
+          </div>
+        </div>`;
+    } else {
+      inner = `
+        <div class="msg-media-locked-placeholder">
+          ${med.file_type === 'video' ? '🎬' : '📸'}
+        </div>
+        <div class="msg-media-lock-overlay" style="position:static;background:none;padding:8px 12px 0;">
+          <button class="msg-media-unlock-btn" onclick="unlockMedia(${med.media_id}, this)">
+            🔒 Открыть за $${med.price_usd.toFixed(2)}
+          </button>
+        </div>`;
+    }
+    return `<div class="msg msg-media ${isMine ? 'mine' : 'theirs'}" data-msg-id="${m.id}">
+      ${inner}
+      <div class="msg-time">${timeStr}</div>
+    </div>`;
+  }
+  return `<div class="msg ${isMine ? 'mine' : 'theirs'}" data-msg-id="${m.id}">${esc(m.text)}<div class="msg-time">${timeStr}</div></div>`;
 }
 
 async function chatPoll() {
@@ -1007,7 +1179,7 @@ async function chatPoll() {
       msgs.forEach(m => {
         const isMine = (role === 'fan' && m.role === 'fan') || (role === 'model' && m.role === 'model');
         const d = document.createElement('div');
-        d.innerHTML = `<div class="msg ${isMine?'mine':'theirs'}">${esc(m.text)}<div class="msg-time">${new Date(m.ts*1000).toLocaleTimeString([],{hour:'2-digit',minute:'2-digit'})}</div></div>`;
+        d.innerHTML = _buildMsgBubble(m, isMine);
         container.appendChild(d.firstElementChild);
         chatLastMsgId = Math.max(chatLastMsgId, m.id);
       });
@@ -1030,17 +1202,118 @@ async function chatSend() {
   } catch(e) { showToast('❌ Ошибка отправки', 'error'); }
 }
 
+function chatAttachClick() {
+  document.getElementById('chat-media-input')?.click();
+}
+
+function chatMediaFileSelected(input) {
+  const file = input?.files?.[0];
+  if (!file) return;
+  _pendingMediaFile = file;
+  const isVideo = file.type.startsWith('video/');
+  const slot = document.getElementById('media-form-slot');
+  if (!slot) return;
+  const previewSrc = URL.createObjectURL(file);
+  slot.innerHTML = `
+    <div class="media-form-overlay">
+      <div class="media-form-preview">
+        ${isVideo
+          ? `<div style="width:52px;height:52px;background:rgba(255,255,255,0.08);border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:24px;">🎬</div>`
+          : `<img src="${previewSrc}" alt="">`}
+        <div style="font-size:13px;color:var(--muted);">${esc(file.name)}</div>
+      </div>
+      <div class="media-form-hint">Введи цену (0 = бесплатно). Фанат увидит размытый превью.</div>
+      <div class="media-form-row">
+        <input type="number" id="media-price-input" min="0" step="0.5" placeholder="Цена $" value="5">
+        <button class="media-form-send" onclick="chatSendMedia()">Отправить</button>
+        <button class="media-form-cancel" onclick="chatCancelMediaForm()">✕</button>
+      </div>
+    </div>`;
+}
+
+function chatCancelMediaForm() {
+  _pendingMediaFile = null;
+  const slot = document.getElementById('media-form-slot');
+  if (slot) slot.innerHTML = '';
+  const inp = document.getElementById('chat-media-input');
+  if (inp) inp.value = '';
+}
+
+async function chatSendMedia() {
+  if (!_pendingMediaFile || !chatContext) return;
+  const price = parseFloat(document.getElementById('media-price-input')?.value || '0') || 0;
+  const {partnerId} = chatContext;
+  const fd = new FormData();
+  fd.append('file', _pendingMediaFile);
+  fd.append('price', String(price));
+  chatCancelMediaForm();
+  showToast('⏳ Загружаем…');
+  try {
+    const r = await fetch(`/api/model/chat/${partnerId}/send_media`, {
+      method: 'POST',
+      headers: {Authorization: AUTH},
+      body: fd,
+    });
+    await apiJson(r);
+    showToast('✅ Медиа отправлено!', 'success');
+    await chatPoll();
+  } catch(e) {
+    showToast('❌ Ошибка: ' + e.message, 'error');
+  }
+}
+
+async function unlockMedia(mediaId, btnEl) {
+  if (btnEl) btnEl.disabled = true;
+  try {
+    const r = await fetch(`/api/chat/media/${mediaId}/unlock`, {
+      method: 'POST',
+      headers: {Authorization: AUTH},
+    });
+    if (r.status === 402) {
+      showToast('❌ Недостаточно средств. Пополни баланс.', 'error');
+      if (btnEl) btnEl.disabled = false;
+      return;
+    }
+    const data = await apiJson(r);
+    if (data.url) {
+      tg.HapticFeedback.notificationOccurred('success');
+      showToast('✅ Разблокировано!', 'success');
+      // Re-render this specific message bubble
+      const bubble = btnEl ? btnEl.closest('[data-msg-id]') : null;
+      if (bubble) {
+        const img = document.createElement('img');
+        img.src = data.url;
+        img.style.cssText = 'width:100%;max-width:220px;border-radius:12px;display:block;';
+        bubble.innerHTML = img.outerHTML + `<div class="msg-time">${bubble.querySelector('.msg-time')?.textContent || ''}</div>`;
+      } else {
+        await chatPoll();
+      }
+    }
+  } catch(e) {
+    showToast('❌ ' + e.message, 'error');
+    if (btnEl) btnEl.disabled = false;
+  }
+}
+
 function chatGoBack() {
   if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
+  const wasRole = chatContext ? chatContext.role : null;
   chatContext = null;
-  init();
+  if (wasRole === 'fan') {
+    renderFanShell();
+  } else if (wasRole === 'model') {
+    initModelDashboard(null);
+  } else {
+    init();
+  }
 }
 
 // ── Grid ─────────────────────────────────────────────────
 
 function renderGrid(models) {
+  const target = document.getElementById('fan-tab-content') || document.getElementById('content');
   if (!models || !models.length) {
-    document.getElementById('content').innerHTML = `
+    target.innerHTML = `
       <div class="empty-state">
         <div class="empty-icon">💫</div>
         <div class="empty-title">Скоро появятся новые анкеты</div>
@@ -1062,7 +1335,7 @@ function renderGrid(models) {
         </div>
       </div>
     </div>`).join('');
-  document.getElementById('content').innerHTML = `<div class="grid">${html}</div>`;
+  target.innerHTML = `<div class="grid">${html}</div>`;
 
   // Load photos lazily
   models.forEach(m => {
