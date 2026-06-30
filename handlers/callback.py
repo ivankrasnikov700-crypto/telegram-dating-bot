@@ -7,8 +7,11 @@ import threading
 from keyboards.inline import (
     get_main_menu,
     get_topup_menu,
+    get_payment_method_keyboard,
+    get_topup_amounts_keyboard,
     get_payment_keyboard,
     get_profile_menu,
+    get_exchange_contact_keyboard,
 )
 from utils.payments import (
     generate_topup_invoice,
@@ -37,6 +40,9 @@ import time as _time
 
 # Словарь активных платежей: user_id → invoice
 active_payments = {}
+
+# Выбранный метод оплаты до выбора суммы: user_id → "ltc" | "crypto"
+_pending_method: dict = {}
 
 # Блокировка против двойного зачисления
 _activation_lock = threading.Lock()
@@ -286,34 +292,109 @@ def register_callback_handlers(bot):
 
         safe_edit(bot, call, text, reply_markup=get_profile_menu())
 
+    # ── Обмен валют ──────────────────────────
+
+    @bot.callback_query_handler(func=lambda call: call.data == "exchange")
+    def show_exchange(call):
+        bot.answer_callback_query(call.id)
+        from utils.payments import get_ltc_rate
+        try:
+            rate = get_ltc_rate()
+        except Exception:
+            rate = "N/A"
+        text = (
+            "💱 *Обмен валют*\n\n"
+            "Текущий курс LTC:\n"
+            "1 LTC = *$" + str(rate) + " USD*\n\n"
+            "Для обмена крипты на лей (MDL) или обратно — пиши администратору:"
+        )
+        safe_edit(bot, call, text, reply_markup=get_exchange_contact_keyboard(), parse_mode="Markdown")
+
     # ── Пополнить баланс ─────────────────────
 
     @bot.callback_query_handler(func=lambda call: call.data == "topup_balance")
     def topup_balance(call):
         bot.answer_callback_query(call.id)
-        user_id = call.from_user.id
-        balance = get_usd_balance(user_id)
+        from utils.cryptobot import is_configured as _cp_ok
+        balance = get_usd_balance(call.from_user.id)
         text = (
-            "💵 Пополнение баланса\n\n"
-            "Текущий баланс: $" + str(round(balance, 2)) + "\n\n"
-            "━━━━━━━━━━━━━━━\n"
-            "Выбери сумму пополнения:\n\n"
-            "Оплата принимается в LTC (Litecoin).\n"
-            "После подтверждения баланс пополнится."
+            "💵 *Пополнение баланса*\n\n"
+            "Текущий баланс: $" + str(round(float(balance), 2)) + "\n\n"
+            "Выбери способ оплаты:"
         )
-        safe_edit(bot, call, text, reply_markup=get_topup_menu())
+        safe_edit(bot, call, text,
+                  reply_markup=get_payment_method_keyboard(has_crypto=_cp_ok()),
+                  parse_mode="Markdown")
+
+    # ── Выбор метода оплаты ───────────────────
+
+    @bot.callback_query_handler(func=lambda call: call.data == "topup_method_ltc")
+    def topup_method_ltc(call):
+        bot.answer_callback_query(call.id)
+        _pending_method[call.from_user.id] = "ltc"
+        safe_edit(bot, call,
+                  "₿ *LTC оплата*\n\nВыбери сумму пополнения:",
+                  reply_markup=get_topup_amounts_keyboard(),
+                  parse_mode="Markdown")
+
+    @bot.callback_query_handler(func=lambda call: call.data == "topup_method_crypto")
+    def topup_method_crypto(call):
+        bot.answer_callback_query(call.id)
+        _pending_method[call.from_user.id] = "crypto"
+        safe_edit(bot, call,
+                  "💎 *CryptoBot (USDT)*\n\nВыбери сумму пополнения:",
+                  reply_markup=get_topup_amounts_keyboard(),
+                  parse_mode="Markdown")
 
     # ── Выбор суммы пополнения ───────────────
 
     @bot.callback_query_handler(
-        func=lambda call: (
-            call.data.startswith("topup_") and call.data[6:].isdigit()
-        )
+        func=lambda call: call.data.startswith("topup_") and call.data[6:].isdigit()
     )
     def handle_topup_amount(call):
-        bot.answer_callback_query(call.id, "⏳ Генерируем счёт...")
         amount_usd = int(call.data[6:])
         user_id    = call.from_user.id
+        method     = _pending_method.pop(user_id, "ltc")
+
+        if method == "crypto":
+            from utils.cryptobot import create_invoice as _cp_invoice, is_configured as _cp_ok
+            if not _cp_ok():
+                bot.answer_callback_query(call.id, "❌ CryptoBot не настроен", show_alert=True)
+                return
+            bot.answer_callback_query(call.id, "⏳ Создаём инвойс CryptoBot...")
+            try:
+                invoice = _cp_invoice(
+                    "USDT", amount_usd,
+                    "Miss Moldova balance +$" + str(amount_usd),
+                    str(user_id) + ":" + str(int(_time.time())),
+                )
+                conn = get_connection()
+                cur  = conn.cursor()
+                cur.execute(
+                    "INSERT INTO cryptobot_invoices (invoice_id, user_id, amount_usd, created_at) "
+                    "VALUES (%s, %s, %s, %s) ON CONFLICT (invoice_id) DO NOTHING",
+                    (invoice["invoice_id"], user_id, amount_usd, int(_time.time())),
+                )
+                conn.commit()
+                conn.close()
+                markup = types.InlineKeyboardMarkup(row_width=1)
+                markup.add(
+                    types.InlineKeyboardButton("💎 Оплатить в CryptoBot", url=invoice["pay_url"]),
+                    types.InlineKeyboardButton("✅ Я оплатил", callback_data="crypto_paid_" + str(invoice["invoice_id"])),
+                    types.InlineKeyboardButton("« Отмена",    callback_data="back_to_menu"),
+                )
+                safe_edit(bot, call,
+                    "💎 *Счёт CryptoBot*\n\n"
+                    "💵 Сумма: *$" + str(amount_usd) + " USDT*\n\n"
+                    "Нажми кнопку ниже для оплаты в @CryptoBot,\n"
+                    "затем нажми *Я оплатил* — баланс зачислится.",
+                    reply_markup=markup, parse_mode="Markdown")
+            except Exception as e:
+                bot.answer_callback_query(call.id, "❌ Ошибка: " + str(e), show_alert=True)
+            return
+
+        # ── LTC flow (existing) ──────────────
+        bot.answer_callback_query(call.id, "⏳ Генерируем счёт...")
         register_user(user_id, call.from_user.username or "", call.from_user.full_name or "")
 
         invoice = generate_topup_invoice(amount_usd, user_id)
@@ -346,6 +427,51 @@ def register_callback_handlers(bot):
             args=(bot, call.message.chat.id, user_id, invoice),
             daemon=True
         ).start()
+
+    # ── CryptoBot "Я оплатил" ────────────────
+
+    @bot.callback_query_handler(func=lambda call: call.data.startswith("crypto_paid_"))
+    def crypto_paid_check(call):
+        try:
+            invoice_id = int(call.data.replace("crypto_paid_", ""))
+        except ValueError:
+            bot.answer_callback_query(call.id, "❌ Некорректный ID", show_alert=True)
+            return
+        user_id = call.from_user.id
+        from utils.cryptobot import get_invoice as _get_inv
+        inv = _get_inv(invoice_id)
+        if not inv or inv.get("status") != "paid":
+            bot.answer_callback_query(
+                call.id,
+                "❌ Оплата ещё не получена. Подожди немного и попробуй снова.",
+                show_alert=True
+            )
+            return
+        conn = get_connection()
+        cur  = conn.cursor()
+        cur.execute(
+            "SELECT credited, amount_usd FROM cryptobot_invoices "
+            "WHERE invoice_id = %s AND user_id = %s",
+            (invoice_id, user_id),
+        )
+        row = cur.fetchone()
+        if row and not row[0]:
+            cur.execute(
+                "UPDATE cryptobot_invoices SET credited = TRUE WHERE invoice_id = %s",
+                (invoice_id,),
+            )
+            conn.commit()
+            conn.close()
+            amount = float(row[1])
+            add_usd_balance(user_id, amount, "CryptoBot top-up #" + str(invoice_id))
+            bot.answer_callback_query(call.id, "✅ Баланс пополнен на $" + str(int(amount)) + "!", show_alert=True)
+            safe_edit(bot, call,
+                "✅ *Баланс пополнен на $" + str(int(amount)) + "!*\n\n"
+                "Теперь ты можешь открыть чат с моделью.",
+                reply_markup=get_main_menu(), parse_mode="Markdown")
+        else:
+            conn.close()
+            bot.answer_callback_query(call.id, "Баланс уже зачислен ранее.", show_alert=True)
 
     # ── Копировать адрес ─────────────────────
 

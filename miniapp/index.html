@@ -1162,9 +1162,12 @@ async function switchAdminTab(tab) {
 }
 
 async function apiJson(r) {
-  if (r.ok) return r.json();
-  let msg;
-  try { msg = (await r.json()).detail; } catch { msg = await r.text(); }
+  const text = await r.text();  // read body ONCE — prevents "body stream already read"
+  if (r.ok) {
+    try { return JSON.parse(text); } catch { return text; }
+  }
+  let msg = text;
+  try { msg = JSON.parse(text).detail || text; } catch {}
   throw new Error('[' + r.status + '] ' + (msg || 'Server error'));
 }
 

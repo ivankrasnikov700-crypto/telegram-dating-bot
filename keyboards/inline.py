@@ -19,6 +19,7 @@ def get_main_menu() -> types.InlineKeyboardMarkup:
     markup.add(
         types.InlineKeyboardButton("💵 Пополнить баланс", callback_data="topup_balance"),
         girls_btn,
+        types.InlineKeyboardButton("💱 Обмен",            callback_data="exchange"),
         types.InlineKeyboardButton("⭐ Отзывы",           callback_data="reviews"),
         types.InlineKeyboardButton("👑 VIP Клуб",         callback_data="vip_club"),
         types.InlineKeyboardButton("👤 Мой профиль",      callback_data="my_profile"),
@@ -27,15 +28,33 @@ def get_main_menu() -> types.InlineKeyboardMarkup:
     return markup
 
 
-def get_topup_menu() -> types.InlineKeyboardMarkup:
+def get_payment_method_keyboard(has_crypto: bool = False) -> types.InlineKeyboardMarkup:
+    """Выбор способа оплаты при пополнении баланса."""
+    markup = types.InlineKeyboardMarkup(row_width=1)
+    if has_crypto:
+        markup.add(types.InlineKeyboardButton("💎 CryptoBot (USDT)", callback_data="topup_method_crypto"))
+    markup.add(
+        types.InlineKeyboardButton("₿ LTC (Litecoin)", callback_data="topup_method_ltc"),
+        types.InlineKeyboardButton("« Назад",           callback_data="back_to_menu"),
+    )
+    return markup
+
+
+def get_topup_amounts_keyboard() -> types.InlineKeyboardMarkup:
+    """Суммы пополнения — общие для LTC и CryptoBot."""
     markup = types.InlineKeyboardMarkup(row_width=1)
     markup.add(
         types.InlineKeyboardButton("💵 $10",  callback_data="topup_10"),
         types.InlineKeyboardButton("💵 $25",  callback_data="topup_25"),
         types.InlineKeyboardButton("💵 $50",  callback_data="topup_50"),
-        types.InlineKeyboardButton("« Назад", callback_data="back_to_menu")
+        types.InlineKeyboardButton("« Назад", callback_data="topup_balance"),
     )
     return markup
+
+
+def get_topup_menu() -> types.InlineKeyboardMarkup:
+    """Legacy alias — used by restore_pending_payments."""
+    return get_topup_amounts_keyboard()
 
 
 def get_profile_menu() -> types.InlineKeyboardMarkup:
