@@ -456,23 +456,53 @@ def fan_unlock_media(media_id: int, authorization: str = Header(None)):
 
 
 @app.get("/api/me/chats")
-def fan_chats_list(authorization: str = Header(None)):
+def fan_chats_list(authorization: str = Header(None), seen: str = ""):
+    """
+    Returns fan's active chats with unread counts.
+    `seen` param format: "modelId1:lastMsgId1,modelId2:lastMsgId2"
+    """
     user = _auth(authorization)
     fan_id = int(user["id"])
     chats = get_fan_active_chats(fan_id)
     now = int(time.time())
+
+    seen_map: dict = {}
+    for part in (seen or "").split(","):
+        if ":" in part:
+            try:
+                mid, last = part.split(":", 1)
+                seen_map[int(mid)] = int(last)
+            except ValueError:
+                pass
+
     result = []
     for c in chats:
         model = get_model_by_telegram_id(c["model_id"])
         if not model:
             continue
         remaining = max(0, int(c["expires_at"]) - now)
+        model_catalog_id = model["id"]
+        last_seen_id = seen_map.get(model_catalog_id, 0)
+
+        conn = get_connection(); cur = _cur(conn)
+        try:
+            cur.execute(
+                "SELECT COUNT(*) AS cnt FROM chat_messages "
+                "WHERE chat_id=%s AND sender_role='model' AND id>%s",
+                (c["chat_id"], last_seen_id)
+            )
+            row = cur.fetchone()
+            unread = int(row["cnt"]) if row else 0
+        finally:
+            conn.close()
+
         result.append({
-            "model_id":      model["id"],
+            "model_id":      model_catalog_id,
             "name":          model.get("name", "Модель"),
             "preview_photo": model.get("preview_photo"),
             "hours_left":    remaining // 3600,
             "minutes_left":  (remaining % 3600) // 60,
+            "unread":        unread,
         })
     return result
 

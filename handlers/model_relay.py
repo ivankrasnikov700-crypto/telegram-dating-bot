@@ -204,6 +204,19 @@ def process_model_reply(bot, model_id: int, fan_id: int,
         print("[RELAY] Не удалось доставить сообщение фанату " + str(fan_id) + ": " + str(e))
         return {"ok": False, "reason": "Telegram delivery error: " + str(e)}
 
+    # Mirror into Mini App chat history so model sees her own sent messages
+    try:
+        conn = get_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO chat_messages (chat_id, sender_id, sender_role, content, created_at) "
+            "VALUES (%s,%s,'model',%s,%s)",
+            (str(fan_id) + "_" + str(model_id), model_id, text_content, int(time.time()))
+        )
+        conn.commit(); conn.close()
+    except Exception as e:
+        print("[RELAY] chat_messages mirror error: " + str(e))
+
     return {"ok": True}
 
 
@@ -475,6 +488,22 @@ def _send_free_media(bot, model_id: int, pending: dict, chats: list):
         except Exception as e:
             print("[RELAY] Не удалось доставить медиа фанату " + str(fan_id) + ": " + str(e))
 
+        # Mirror into Mini App chat as a free media message
+        try:
+            from database.paid_media import create_paid_media
+            media_id = create_paid_media(model_id, fan_id, file_id, file_type, 0.0, None)
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute("UPDATE paid_media SET is_unlocked=1 WHERE id=%s", (media_id,))
+            cursor.execute(
+                "INSERT INTO chat_messages (chat_id, sender_id, sender_role, content, created_at, media_id) "
+                "VALUES (%s,%s,'model','',%s,%s)",
+                (str(fan_id) + "_" + str(model_id), model_id, int(time.time()), media_id)
+            )
+            conn.commit(); conn.close()
+        except Exception as e:
+            print("[RELAY] free media mirror error: " + str(e))
+
     bot.send_message(model_id, "✅ Медиа отправлено фанатам (" + str(len(chats)) + " чел.)")
 
 
@@ -497,6 +526,19 @@ def _send_paid_media(bot, model_id: int, pending: dict, chats: list, price: floa
         fan_id   = chat["fan_id"]
         media_id = create_paid_media(model_id, fan_id, file_id, file_type, price, blurred_file_id)
         media_ids.append(media_id)
+
+        # Mirror into Mini App chat as a paid media message
+        try:
+            conn = get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO chat_messages (chat_id, sender_id, sender_role, content, created_at, media_id) "
+                "VALUES (%s,%s,'model','',%s,%s)",
+                (str(fan_id) + "_" + str(model_id), model_id, int(time.time()), media_id)
+            )
+            conn.commit(); conn.close()
+        except Exception as e:
+            print("[RELAY] paid media mirror error: " + str(e))
 
         markup = types.InlineKeyboardMarkup()
         markup.add(types.InlineKeyboardButton(
