@@ -1371,20 +1371,34 @@ function renderAdminUsers(users) {
   const html = users.map(u => {
     const name = u.username ? '@' + u.username : (u.full_name || 'User #' + u.user_id);
     return `
-      <div class="admin-user-row">
-        <div class="user-info">
-          <div class="user-name">${esc(name)}</div>
-          <div class="user-meta">
-            ID: ${u.user_id}
-            ${u.user_role === 'model' ? ' · <span class="badge badge-blue">Модель</span>' : ''}
-            ${u.is_banned ? ' · <span class="badge badge-err">Бан</span>' : ''}
+      <div style="background:var(--card);border-radius:var(--radius);box-shadow:0 2px 8px rgba(0,0,0,0.2);overflow:hidden;">
+        <div class="admin-user-row">
+          <div class="user-info">
+            <div class="user-name">${esc(name)}</div>
+            <div class="user-meta">
+              ID: ${u.user_id}
+              ${u.user_role === 'model' ? ' · <span class="badge badge-blue">Модель</span>' : ''}
+              ${u.is_banned ? ' · <span class="badge badge-err">Бан</span>' : ''}
+            </div>
+            <div class="user-balance">$${u.balance_usd.toFixed(2)}</div>
           </div>
-          <div class="user-balance">$${u.balance_usd.toFixed(2)}</div>
+          <div style="display:flex;gap:6px;flex:none;">
+            <button class="btn-sm" style="width:36px;background:#27ae60;border:none;border-radius:8px;color:#fff;font-size:16px;cursor:pointer;"
+              onclick="showAddBalanceForm(${u.user_id})">💵</button>
+            ${u.is_banned
+              ? `<button class="btn-sm btn-approve" style="width:76px;" onclick="unbanUser(${u.user_id})">✅ Разбан</button>`
+              : `<button class="btn-sm btn-reject"  style="width:68px;" onclick="banUser(${u.user_id})">🚫 Бан</button>`
+            }
+          </div>
         </div>
-        ${u.is_banned
-          ? `<button class="btn-sm btn-approve" style="flex:none;width:80px;" onclick="unbanUser(${u.user_id})">✅ Разбан</button>`
-          : `<button class="btn-sm btn-reject"  style="flex:none;width:70px;" onclick="banUser(${u.user_id})">🚫 Бан</button>`
-        }
+        <div id="add-balance-form-${u.user_id}" style="display:none;padding:10px 16px 12px;border-top:1px solid rgba(255,255,255,0.06);">
+          <div style="display:flex;gap:8px;align-items:center;">
+            <input id="add-balance-input-${u.user_id}" type="number" min="1" step="0.01" placeholder="Сумма $"
+              style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);
+              background:var(--bg);color:var(--text);font-size:14px;">
+            <button class="btn-sm btn-approve" style="flex:none;" onclick="submitAddBalance(${u.user_id})">✅ OK</button>
+          </div>
+        </div>
       </div>`;
   }).join('');
   document.getElementById('admin-content').innerHTML = `
@@ -1392,6 +1406,30 @@ function renderAdminUsers(users) {
       <div style="color:var(--muted);font-size:12px;margin-bottom:10px;">Последние 50 пользователей</div>
       <div style="display:flex;flex-direction:column;gap:8px;">${html}</div>
     </div>`;
+}
+
+function showAddBalanceForm(uid) {
+  const form = document.getElementById('add-balance-form-' + uid);
+  if (!form) return;
+  const isVisible = form.style.display !== 'none';
+  form.style.display = isVisible ? 'none' : 'block';
+  if (!isVisible) document.getElementById('add-balance-input-' + uid)?.focus();
+}
+
+async function submitAddBalance(uid) {
+  const input = document.getElementById('add-balance-input-' + uid);
+  const amount = parseFloat(input?.value);
+  if (!amount || amount <= 0) { showToast('Введи корректную сумму', 'error'); return; }
+  tg.HapticFeedback.impactOccurred('medium');
+  try {
+    const r = await post(`/api/admin/users/${uid}/add_balance`, {amount});
+    const data = await apiJson(r);
+    showToast('✅ Баланс пополнен на $' + amount.toFixed(2), 'success');
+    tg.HapticFeedback.notificationOccurred('success');
+    showAdminTab('fans');
+  } catch(e) {
+    showToast('❌ ' + e.message, 'error');
+  }
 }
 
 // ── Withdrawal actions ────────────────────────────────────

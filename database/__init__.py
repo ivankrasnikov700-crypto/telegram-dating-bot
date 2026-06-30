@@ -92,6 +92,17 @@ def init_db():
         )
     ''')
 
+    # Добавляем колонки, которые могли отсутствовать в ранних версиях БД
+    for col, definition in [
+        ("balance_usd",  "REAL DEFAULT 0.0"),
+        ("user_role",    "TEXT DEFAULT 'fan'"),
+        ("is_banned",    "INTEGER DEFAULT 0"),
+    ]:
+        try:
+            cursor.execute(f"ALTER TABLE users ADD COLUMN IF NOT EXISTS {col} {definition}")
+        except Exception:
+            conn.rollback()
+
     conn.commit()
     conn.close()
     print("[DB] База данных инициализирована (PostgreSQL)")

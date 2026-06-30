@@ -481,6 +481,19 @@ def admin_unban_user(uid: int, authorization: str = Header(None)):
     return {"ok": True}
 
 
+@app.post("/api/admin/users/{uid}/add_balance")
+async def admin_add_balance(uid: int, request: Request, authorization: str = Header(None)):
+    _admin_auth(authorization)
+    body = await request.json()
+    amount = float(body.get("amount", 0))
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount must be > 0")
+    if not get_user(uid):
+        raise HTTPException(status_code=404, detail="User not found")
+    add_usd_balance(uid, amount, "Пополнение администратором")
+    return {"ok": True, "new_balance": round(get_usd_balance(uid), 2)}
+
+
 # ─────────────────────────────────────────────
 # Admin: Model Management
 # ─────────────────────────────────────────────
