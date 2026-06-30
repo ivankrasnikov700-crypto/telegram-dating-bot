@@ -121,6 +121,14 @@ def init_db():
         except Exception:
             conn.rollback()
 
+    try:
+        cursor.execute(
+            "ALTER TABLE users ADD CONSTRAINT chk_balance_non_negative "
+            "CHECK (balance_usd >= 0)"
+        )
+    except Exception:
+        conn.rollback()
+
     conn.commit()
     conn.close()
     print("[DB] База данных инициализирована (PostgreSQL)")
