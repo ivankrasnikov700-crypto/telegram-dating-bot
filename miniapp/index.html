@@ -448,6 +448,40 @@
       letter-spacing: 0.2px;
     }
     .btn-withdraw:active { transform: scale(0.98); }
+    .btn-withdraw:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+    .withdraw-progress-wrap {
+      margin-bottom: 10px;
+    }
+    .withdraw-progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .withdraw-progress-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
+    }
+    .withdraw-progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, #4fba74, #38a05d);
+      transition: width 0.4s;
+    }
+    .withdraw-hint {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      margin: 6px 0 14px;
+    }
 
     .section-title {
       font-size: 13px;
@@ -1077,7 +1111,26 @@ function renderModelDashboard(data) {
         </div>` : ''}
       </div>
 
-      <button class="btn-withdraw" onclick="doWithdraw()">💸 Вывести средства</button>
+      ${(() => {
+        const MIN_WITHDRAW = 10.0;
+        const bal = data.balance_usd;
+        const canWithdraw = bal >= MIN_WITHDRAW;
+        const pct = Math.min(100, (bal / MIN_WITHDRAW) * 100).toFixed(1);
+        const stillNeed = (MIN_WITHDRAW - bal).toFixed(2);
+        return canWithdraw
+          ? `<button class="btn-withdraw" onclick="doWithdraw()">💸 Вывести средства</button>`
+          : `<div class="withdraw-progress-wrap">
+               <div class="withdraw-progress-label">
+                 <span>До минимума вывода</span>
+                 <span>$${bal.toFixed(2)} / $${MIN_WITHDRAW.toFixed(2)}</span>
+               </div>
+               <div class="withdraw-progress-bar">
+                 <div class="withdraw-progress-fill" style="width:${pct}%"></div>
+               </div>
+             </div>
+             <div class="withdraw-hint">Ещё $${stillNeed} до первого вывода</div>
+             <button class="btn-withdraw" disabled>💸 Вывести средства</button>`;
+      })()}
 
       <div class="section-title">Активные чаты (${data.active_chats ? data.active_chats.length : 0})</div>
       <div class="chat-list">${chatsHTML}</div>
