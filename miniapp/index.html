@@ -7,14 +7,20 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg:       #17212b;
-      --card:     #242f3d;
-      --accent:   #5288c1;
-      --text:     #e8f0f7;
-      --muted:    #708499;
-      --success:  #4fba74;
-      --danger:   #e05252;
-      --radius:   14px;
+      --bg:             #0F1420;
+      --bg-elevated:    #171D2C;
+      --card:           #1B2233;
+      --card-border:    rgba(255,255,255,0.08);
+      --text:           #F2F3F7;
+      --text-primary:   #F2F3F7;
+      --text-secondary: #8A93A8;
+      --muted:          #8A93A8;
+      --accent:         #E0447E;
+      --accent-soft:    #F0A8C4;
+      --accent-dark:    #B22E5F;
+      --success:        #34C77B;
+      --danger:         #E5484D;
+      --radius:         14px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -36,7 +42,7 @@
 
     /* ── Header ─────────────────────────────── */
     .header {
-      background: linear-gradient(160deg, #1c2d3e 0%, #121c28 100%);
+      background: linear-gradient(160deg, var(--bg-elevated) 0%, var(--bg) 100%);
       padding: 14px 18px;
       display: flex;
       align-items: center;
@@ -50,18 +56,18 @@
       font-size: 17px;
       font-weight: 700;
       letter-spacing: 0.3px;
-      background: linear-gradient(90deg, #d0e8ff, #8ab4e8);
+      background: linear-gradient(90deg, var(--accent-soft), var(--accent));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
     .balance-pill {
-      background: rgba(82,136,193,0.18);
-      border: 1px solid rgba(82,136,193,0.35);
+      background: rgba(224,68,126,0.15);
+      border: 1px solid rgba(224,68,126,0.3);
       border-radius: 20px;
       padding: 5px 14px;
       font-size: 13px;
       font-weight: 600;
-      color: #9fc8f0;
+      color: var(--accent-soft);
       transition: background 0.2s;
     }
 
@@ -82,6 +88,7 @@
       position: relative;
       transition: transform 0.12s ease, box-shadow 0.12s ease;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      border: 1px solid var(--card-border);
     }
     .card:active { transform: scale(0.96); box-shadow: none; }
 
@@ -90,7 +97,7 @@
       width: 100%;
       aspect-ratio: 3/4;
       overflow: hidden;
-      background: #1a2535;
+      background: var(--bg-elevated);
     }
     .card-photo {
       width: 100%;
@@ -176,7 +183,7 @@
       position: relative;
       overflow: hidden;
       touch-action: pan-y;
-      background: #131e29;
+      background: var(--bg);
     }
     .gallery-track {
       display: flex;
@@ -199,7 +206,7 @@
       align-items: center;
       justify-content: center;
       font-size: 56px;
-      background: linear-gradient(135deg, #1a2535, #242f3d);
+      background: linear-gradient(135deg, var(--bg-elevated), var(--card));
     }
 
     .gallery-dots {
@@ -260,7 +267,7 @@
       font-weight: 500;
     }
     .profile-bio {
-      color: #93afc8;
+      color: var(--text-secondary);
       line-height: 1.6;
       font-size: 14px;
       margin-bottom: 22px;
@@ -282,9 +289,9 @@
     }
     .btn-action:active:not(:disabled) { transform: scale(0.98); }
     .btn-action.buy {
-      background: linear-gradient(135deg, #5288c1 0%, #3a6fa8 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
       color: #fff;
-      box-shadow: 0 4px 16px rgba(82,136,193,0.35);
+      box-shadow: 0 4px 16px rgba(224,68,126,0.35);
     }
     .btn-action.active-chat {
       background: rgba(79,186,116,0.15);
@@ -314,8 +321,8 @@
       bottom: 28px;
       left: 50%;
       transform: translateX(-50%) translateY(60px);
-      background: #2c3e50;
-      color: #fff;
+      background: var(--card);
+      color: var(--text);
       padding: 11px 22px;
       border-radius: 24px;
       font-size: 13px;
@@ -343,7 +350,7 @@
     }
     .spin {
       width: 36px; height: 36px;
-      border: 3px solid rgba(82,136,193,0.18);
+      border: 3px solid rgba(224,68,126,0.18);
       border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.75s linear infinite;
@@ -356,7 +363,7 @@
       color: var(--muted);
     }
     .empty-icon { font-size: 52px; margin-bottom: 14px; }
-    .empty-title { font-size: 16px; font-weight: 600; color: #9ab; margin-bottom: 6px; }
+    .empty-title { font-size: 16px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
     .empty-sub   { font-size: 14px; }
 
     /* ── Model Dashboard ────────────────────── */
@@ -368,6 +375,7 @@
       overflow: hidden;
       margin-bottom: 12px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      border: 1px solid var(--card-border);
     }
     .model-hero-photo {
       width: 100%;
@@ -378,7 +386,7 @@
     .model-hero-placeholder {
       width: 100%;
       height: 220px;
-      background: linear-gradient(135deg, #1a2535, #242f3d);
+      background: linear-gradient(135deg, var(--bg-elevated), var(--card));
       display: flex;
       align-items: center;
       justify-content: center;
@@ -400,7 +408,7 @@
     }
     .model-hero-bio {
       font-size: 14px;
-      color: #93afc8;
+      color: var(--text-secondary);
       line-height: 1.55;
     }
 
@@ -416,6 +424,7 @@
       padding: 16px 14px;
       text-align: center;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .stat-label {
       font-size: 11px;
@@ -440,9 +449,9 @@
       font-size: 15px;
       font-weight: 700;
       cursor: pointer;
-      background: linear-gradient(135deg, #4fba74 0%, #38a05d 100%);
+      background: linear-gradient(135deg, var(--success) 0%, #28a068 100%);
       color: #fff;
-      box-shadow: 0 4px 16px rgba(79,186,116,0.3);
+      box-shadow: 0 4px 16px rgba(52,199,123,0.3);
       transition: opacity 0.15s, transform 0.1s;
       margin-bottom: 18px;
       letter-spacing: 0.2px;
@@ -473,7 +482,7 @@
     .withdraw-progress-fill {
       height: 100%;
       border-radius: 3px;
-      background: linear-gradient(90deg, #4fba74, #38a05d);
+      background: linear-gradient(90deg, var(--success), #28a068);
       transition: width 0.4s;
     }
     .withdraw-hint {
@@ -502,11 +511,12 @@
       align-items: center;
       gap: 14px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .chat-avatar {
       width: 44px; height: 44px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #3a6fa8, #5288c1);
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
       display: flex;
       align-items: center;
       justify-content: center;
@@ -597,6 +607,7 @@
       overflow: hidden;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
       margin-top: 10px;
+      border: 1px solid var(--card-border);
     }
     .rules-header {
       padding: 14px 16px;
@@ -632,7 +643,7 @@
     }
     .rules-list li {
       font-size: 13px;
-      color: #93afc8;
+      color: var(--text-secondary);
       line-height: 1.55;
       padding-left: 20px;
       position: relative;
@@ -683,6 +694,7 @@
       padding: 16px 18px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
       margin-top: 10px;
+      border: 1px solid var(--card-border);
     }
     .revenue-row {
       display: flex;
@@ -709,9 +721,9 @@
       font-size: 15px;
       font-weight: 700;
       cursor: pointer;
-      background: linear-gradient(135deg, #5288c1 0%, #3a6fa8 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
       color: #fff;
-      box-shadow: 0 4px 16px rgba(82,136,193,0.3);
+      box-shadow: 0 4px 16px rgba(224,68,126,0.3);
       transition: opacity 0.15s, transform 0.1s;
       letter-spacing: 0.2px;
     }
@@ -724,13 +736,14 @@
       display: flex;
       gap: 14px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .model-thumb-wrap {
       width: 60px; height: 72px;
       flex-shrink: 0;
       border-radius: 10px;
       overflow: hidden;
-      background: #1a2535;
+      background: var(--bg-elevated);
     }
     .model-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
     .model-thumb-ph {
@@ -753,16 +766,17 @@
       border-radius: 10px; padding: 2px 8px;
       white-space: nowrap;
     }
-    .badge-ok   { background: rgba(79,186,116,0.15);  color: var(--success); border: 1px solid rgba(79,186,116,0.3); }
-    .badge-warn { background: rgba(224,82,82,0.12);   color: #e07070;        border: 1px solid rgba(224,82,82,0.25); }
-    .badge-err  { background: rgba(224,82,82,0.2);    color: #e05252;        border: 1px solid rgba(224,82,82,0.35); }
-    .badge-blue { background: rgba(82,136,193,0.14);  color: #9fc8f0;        border: 1px solid rgba(82,136,193,0.3); }
+    .badge-ok   { background: rgba(52,199,123,0.15);  color: var(--success); border: 1px solid rgba(52,199,123,0.3); }
+    .badge-warn { background: rgba(229,72,77,0.12);   color: var(--danger);  border: 1px solid rgba(229,72,77,0.25); }
+    .badge-err  { background: rgba(229,72,77,0.2);    color: var(--danger);  border: 1px solid rgba(229,72,77,0.35); }
+    .badge-blue { background: rgba(224,68,126,0.14);  color: var(--accent-soft); border: 1px solid rgba(224,68,126,0.3); }
 
     .admin-withdrawal-card {
       background: var(--card);
       border-radius: var(--radius);
       padding: 16px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .wd-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
     .wd-id     { font-size: 12px; color: var(--muted); }
@@ -784,8 +798,8 @@
       transition: opacity 0.15s, transform 0.1s;
     }
     .btn-sm:active { transform: scale(0.97); }
-    .btn-approve { background: rgba(79,186,116,0.18); color: var(--success); border: 1px solid rgba(79,186,116,0.35); }
-    .btn-reject  { background: rgba(224,82,82,0.14);  color: #e05252;        border: 1px solid rgba(224,82,82,0.3); }
+    .btn-approve { background: rgba(52,199,123,0.18);  color: var(--success); border: 1px solid rgba(52,199,123,0.35); }
+    .btn-reject  { background: rgba(229,72,77,0.14);   color: var(--danger);  border: 1px solid rgba(229,72,77,0.3); }
     .btn-muted   { background: rgba(255,255,255,0.07); color: var(--muted); }
 
     .reject-textarea {
@@ -806,6 +820,7 @@
       padding: 12px 16px;
       display: flex; align-items: center; gap: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .user-info { flex: 1; min-width: 0; }
     .user-name  { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -1757,7 +1772,7 @@ async function showModelDetail(modelId) {
       chatsHtml = '<div class="empty-sub">Нет активных чатов</div>';
     } else {
       chatsHtml = d.chats.map(c => `
-        <div class="wd-header" style="padding:10px 0;border-bottom:1px solid var(--border);">
+        <div class="wd-header" style="padding:10px 0;border-bottom:1px solid var(--card-border);">
           <span style="font-weight:600;">${esc(c.fan_name)}</span>
           <span style="color:var(--success);">⏱ ${c.hours_left}ч ${c.minutes_left}м</span>
         </div>`).join('');
@@ -1851,7 +1866,7 @@ function renderAdminUsers(users) {
             <div class="user-balance">$${u.balance_usd.toFixed(2)}</div>
           </div>
           <div style="display:flex;gap:6px;flex:none;">
-            <button class="btn-sm" style="width:36px;background:#27ae60;border:none;border-radius:8px;color:#fff;font-size:16px;cursor:pointer;"
+            <button class="btn-sm" style="width:36px;background:var(--success);border:none;border-radius:8px;color:#fff;font-size:16px;cursor:pointer;"
               onclick="showAddBalanceForm(${u.user_id})">💵</button>
             ${u.is_banned
               ? `<button class="btn-sm btn-approve" style="width:76px;" onclick="unbanUser(${u.user_id})">✅ Разбан</button>`
@@ -1993,7 +2008,7 @@ function showAddModelWizard() {
 function renderWizardStep() {
   const steps = ['Данные', 'Фото 1', 'Фото 2', 'Медиа', 'TG ID'];
   const prog  = steps.map((s, i) =>
-    `<span style="padding:3px 8px;border-radius:20px;font-size:11px;background:${i <= _wizardStep ? 'var(--accent)' : 'var(--border)'};color:${i <= _wizardStep ? '#fff' : 'var(--muted)'};">${s}</span>`
+    `<span style="padding:3px 8px;border-radius:20px;font-size:11px;background:${i <= _wizardStep ? 'var(--accent)' : 'var(--card-border)'};color:${i <= _wizardStep ? '#fff' : 'var(--muted)'};">${s}</span>`
   ).join('');
 
   let content = '';
@@ -2009,7 +2024,7 @@ function renderWizardStep() {
       <div class="section-title" style="margin-bottom:8px;">Шаг 2: Главное фото (аватар)</div>
       <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Это фото будет показываться в каталоге</div>
       <input type="file" id="wz-photo1" accept="image/*" style="display:none;" onchange="wizardUploadPhoto(1)">
-      <div id="wz-photo1-preview" style="width:100%;height:160px;background:var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo1').click()">
+      <div id="wz-photo1-preview" style="width:100%;height:160px;background:var(--card-border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo1').click()">
         <span style="color:var(--muted);">📷 Нажми чтобы выбрать фото</span>
       </div>
       <button class="btn-sm btn-muted" onclick="wizardSkipPhoto(1)">Пропустить →</button>`;
@@ -2018,7 +2033,7 @@ function renderWizardStep() {
       <div class="section-title" style="margin-bottom:8px;">Шаг 3: Второе фото</div>
       <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Дополнительное фото профиля</div>
       <input type="file" id="wz-photo2" accept="image/*" style="display:none;" onchange="wizardUploadPhoto(2)">
-      <div id="wz-photo2-preview" style="width:100%;height:160px;background:var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo2').click()">
+      <div id="wz-photo2-preview" style="width:100%;height:160px;background:var(--card-border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo2').click()">
         <span style="color:var(--muted);">📷 Нажми чтобы выбрать фото</span>
       </div>
       <button class="btn-sm btn-muted" onclick="wizardSkipPhoto(2)">Пропустить →</button>`;
@@ -2120,7 +2135,7 @@ async function wizardUploadMedia() {
       await apiJson(r);
       const url = URL.createObjectURL(file);
       list.insertAdjacentHTML('beforeend',
-        `<div style="width:60px;height:60px;border-radius:8px;overflow:hidden;background:var(--border);">
+        `<div style="width:60px;height:60px;border-radius:8px;overflow:hidden;background:var(--card-border);">
           <img src="${url}" style="width:100%;height:100%;object-fit:cover;">
         </div>`);
     } catch(e) {
