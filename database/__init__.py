@@ -93,6 +93,20 @@ def init_db():
     ''')
 
     cursor.execute('''
+        CREATE TABLE IF NOT EXISTS admin_audit_log (
+            id             SERIAL PRIMARY KEY,
+            admin_id       BIGINT NOT NULL,
+            action_type    TEXT NOT NULL,
+            target_user_id BIGINT,
+            details        TEXT,
+            created_at     BIGINT NOT NULL
+        )
+    ''')
+    cursor.execute(
+        'CREATE INDEX IF NOT EXISTS idx_audit_log_admin ON admin_audit_log(admin_id, created_at)'
+    )
+
+    cursor.execute('''
         CREATE TABLE IF NOT EXISTS chat_messages (
             id          SERIAL PRIMARY KEY,
             chat_id     TEXT NOT NULL,

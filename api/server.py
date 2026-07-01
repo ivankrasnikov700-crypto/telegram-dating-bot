@@ -72,6 +72,21 @@ def _admin_auth(authorization: str | None) -> dict:
     return user
 
 
+def _audit(admin_id: int, action_type: str, target_user_id: int | None = None, details: str = ""):
+    try:
+        conn = get_connection()
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO admin_audit_log (admin_id, action_type, target_user_id, details, created_at) "
+            "VALUES (%s, %s, %s, %s, %s)",
+            (admin_id, action_type, target_user_id, details, int(time.time()))
+        )
+        conn.commit()
+        conn.close()
+    except Exception as e:
+        print("[AUDIT] Ошибка записи лога: " + str(e))
+
+
 def _auth(authorization: str | None) -> dict:
     if MINI_APP_DEV:
         return {"id": 999999, "first_name": "DevUser", "username": "devuser"}
@@ -750,7 +765,7 @@ def admin_withdrawals(authorization: str = Header(None)):
 
 @app.post("/api/admin/withdrawals/{wid}/approve")
 def admin_approve_withdrawal(wid: int, authorization: str = Header(None)):
-    _admin_auth(authorization)
+    admin = _admin_auth(authorization)
     w = get_withdrawal(wid)
     if not w:
         raise HTTPException(status_code=404, detail="Not found")
@@ -777,12 +792,14 @@ def admin_approve_withdrawal(wid: int, authorization: str = Header(None)):
     result = process_withdrawal(wid, "paid", notes)
     if not result:
         raise HTTPException(status_code=500, detail="Processing failed")
+    _audit(int(admin["id"]), "approve_withdrawal", int(w["model_user_id"]),
+           "wid=" + str(wid) + " $" + str(round(float(w["amount_usd"]), 2)))
     return {"ok": True}
 
 
 @app.post("/api/admin/withdrawals/{wid}/reject")
 async def admin_reject_withdrawal(wid: int, request: Request, authorization: str = Header(None)):
-    _admin_auth(authorization)
+    admin = _admin_auth(authorization)
     body = await request.json()
     reason = (body.get("reason") or "").strip() or "Отклонено администратором"
     w = get_withdrawal(wid)
@@ -791,7 +808,35 @@ async def admin_reject_withdrawal(wid: int, request: Request, authorization: str
     if w["status"] != "pending":
         raise HTTPException(status_code=409, detail="Already processed: " + w["status"])
     process_withdrawal(wid, "rejected", reason)
+    _audit(int(admin["id"]), "reject_withdrawal", int(w["model_user_id"]),
+           "wid=" + str(wid) + " reason=" + reason)
     return {"ok": True}
+
+
+@app.get("/api/admin/audit_log")
+def admin_audit_log(authorization: str = Header(None)):
+    _admin_auth(authorization)
+    conn = get_connection()
+    cursor = _cur(conn)
+    try:
+        cursor.execute(
+            "SELECT id, admin_id, action_type, target_user_id, details, created_at "
+            "FROM admin_audit_log ORDER BY created_at DESC LIMIT 100"
+        )
+        rows = cursor.fetchall()
+    finally:
+        conn.close()
+    return [
+        {
+            "id":             r["id"],
+            "admin_id":       r["admin_id"],
+            "action_type":    r["action_type"],
+            "target_user_id": r["target_user_id"],
+            "details":        r["details"],
+            "created_at":     r["created_at"],
+        }
+        for r in rows
+    ]
 
 
 @app.get("/api/admin/users")
@@ -826,25 +871,27 @@ def admin_users(authorization: str = Header(None)):
 
 @app.post("/api/admin/users/{uid}/ban")
 def admin_ban_user(uid: int, authorization: str = Header(None)):
-    _admin_auth(authorization)
+    admin = _admin_auth(authorization)
     if not get_user(uid):
         raise HTTPException(status_code=404, detail="User not found")
     ban_user(uid)
+    _audit(int(admin["id"]), "ban", uid)
     return {"ok": True}
 
 
 @app.post("/api/admin/users/{uid}/unban")
 def admin_unban_user(uid: int, authorization: str = Header(None)):
-    _admin_auth(authorization)
+    admin = _admin_auth(authorization)
     if not get_user(uid):
         raise HTTPException(status_code=404, detail="User not found")
     unban_user(uid)
+    _audit(int(admin["id"]), "unban", uid)
     return {"ok": True}
 
 
 @app.post("/api/admin/users/{uid}/add_balance")
 async def admin_add_balance(uid: int, request: Request, authorization: str = Header(None)):
-    _admin_auth(authorization)
+    admin = _admin_auth(authorization)
     body = await request.json()
     amount = float(body.get("amount", 0))
     if amount <= 0:
@@ -852,6 +899,7 @@ async def admin_add_balance(uid: int, request: Request, authorization: str = Hea
     if not get_user(uid):
         raise HTTPException(status_code=404, detail="User not found")
     add_usd_balance(uid, amount, "Пополнение администратором")
+    _audit(int(admin["id"]), "add_balance", uid, "$" + str(round(amount, 2)))
     return {"ok": True, "new_balance": round(get_usd_balance(uid), 2)}
 
 
