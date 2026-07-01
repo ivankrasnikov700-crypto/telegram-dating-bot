@@ -1790,10 +1790,11 @@ function renderAdminUsers(users) {
         </div>
         <div id="add-balance-form-${u.user_id}" style="display:none;padding:10px 16px 12px;border-top:1px solid rgba(255,255,255,0.06);">
           <div style="display:flex;gap:8px;align-items:center;">
-            <input id="add-balance-input-${u.user_id}" type="number" min="1" step="0.01" placeholder="Сумма $"
+            <input id="add-balance-input-${u.user_id}" type="number" min="0.01" step="0.01" placeholder="Сумма $"
               style="flex:1;padding:8px 10px;border-radius:8px;border:1px solid rgba(255,255,255,0.15);
               background:var(--bg);color:var(--text);font-size:14px;">
             <button class="btn-sm btn-approve" style="flex:none;" onclick="submitAddBalance(${u.user_id})">✅ OK</button>
+            <button class="btn-sm" style="flex:none;background:var(--card);color:var(--muted);" onclick="showAddBalanceForm(${u.user_id})">✕</button>
           </div>
         </div>
       </div>`;
