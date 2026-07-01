@@ -57,6 +57,9 @@ def _validate_init_data(init_data: str) -> dict | None:
         computed = hmac.new(secret, check_str.encode(), hashlib.sha256).hexdigest()
         if not hmac.compare_digest(computed, hash_val):
             return None
+        auth_date = int(parsed.get("auth_date", 0))
+        if time.time() - auth_date > 86400:
+            return None
         return json.loads(parsed.get("user", "{}"))
     except Exception:
         return None
