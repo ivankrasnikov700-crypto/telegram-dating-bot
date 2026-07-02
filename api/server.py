@@ -17,6 +17,13 @@ from fastapi.staticfiles import StaticFiles
 
 from config import BOT_TOKEN, ADMIN_IDS, MINI_APP_URL
 from bot_instance import bot as _webhook_bot
+
+# Resolve bot's own Telegram user_id once at startup to exclude it from fan lists
+_BOT_USER_ID: int = 0
+try:
+    _BOT_USER_ID = _telebot.TeleBot(BOT_TOKEN).get_me().id
+except Exception:
+    pass
 from database import register_user, get_usd_balance, get_user, get_connection, _cur, ban_user, unban_user, add_usd_balance
 from database.models import (
     get_all_models, get_model, get_all_media, get_model_by_telegram_id,
@@ -845,13 +852,16 @@ def admin_users(authorization: str = Header(None)):
     conn = get_connection()
     cursor = _cur(conn)
     try:
+        exclude_ids = list(set(ADMIN_IDS + ([_BOT_USER_ID] if _BOT_USER_ID else [])))
         cursor.execute(
             """
             SELECT user_id, username, full_name, balance_usd, user_role, is_banned
             FROM users
+            WHERE user_id != ALL(%s::bigint[])
             ORDER BY user_id DESC
             LIMIT 50
-            """
+            """,
+            (exclude_ids,)
         )
         rows = cursor.fetchall()
     finally:

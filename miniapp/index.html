@@ -7,14 +7,20 @@
   <script src="https://telegram.org/js/telegram-web-app.js"></script>
   <style>
     :root {
-      --bg:       #17212b;
-      --card:     #242f3d;
-      --accent:   #5288c1;
-      --text:     #e8f0f7;
-      --muted:    #708499;
-      --success:  #4fba74;
-      --danger:   #e05252;
-      --radius:   14px;
+      --bg:             #0F1420;
+      --bg-elevated:    #171D2C;
+      --card:           #1B2233;
+      --card-border:    rgba(255,255,255,0.08);
+      --text:           #F2F3F7;
+      --text-primary:   #F2F3F7;
+      --text-secondary: #8A93A8;
+      --muted:          #8A93A8;
+      --accent:         #E0447E;
+      --accent-soft:    #F0A8C4;
+      --accent-dark:    #B22E5F;
+      --success:        #34C77B;
+      --danger:         #E5484D;
+      --radius:         14px;
     }
 
     * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -36,7 +42,7 @@
 
     /* ── Header ─────────────────────────────── */
     .header {
-      background: linear-gradient(160deg, #1c2d3e 0%, #121c28 100%);
+      background: linear-gradient(160deg, var(--bg-elevated) 0%, var(--bg) 100%);
       padding: 14px 18px;
       display: flex;
       align-items: center;
@@ -50,18 +56,18 @@
       font-size: 17px;
       font-weight: 700;
       letter-spacing: 0.3px;
-      background: linear-gradient(90deg, #d0e8ff, #8ab4e8);
+      background: linear-gradient(90deg, var(--accent-soft), var(--accent));
       -webkit-background-clip: text;
       -webkit-text-fill-color: transparent;
     }
     .balance-pill {
-      background: rgba(82,136,193,0.18);
-      border: 1px solid rgba(82,136,193,0.35);
+      background: rgba(224,68,126,0.15);
+      border: 1px solid rgba(224,68,126,0.3);
       border-radius: 20px;
       padding: 5px 14px;
       font-size: 13px;
       font-weight: 600;
-      color: #9fc8f0;
+      color: var(--accent-soft);
       transition: background 0.2s;
     }
 
@@ -82,6 +88,7 @@
       position: relative;
       transition: transform 0.12s ease, box-shadow 0.12s ease;
       box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+      border: 1px solid var(--card-border);
     }
     .card:active { transform: scale(0.96); box-shadow: none; }
 
@@ -90,7 +97,7 @@
       width: 100%;
       aspect-ratio: 3/4;
       overflow: hidden;
-      background: #1a2535;
+      background: var(--bg-elevated);
     }
     .card-photo {
       width: 100%;
@@ -176,7 +183,7 @@
       position: relative;
       overflow: hidden;
       touch-action: pan-y;
-      background: #131e29;
+      background: var(--bg);
     }
     .gallery-track {
       display: flex;
@@ -199,7 +206,7 @@
       align-items: center;
       justify-content: center;
       font-size: 56px;
-      background: linear-gradient(135deg, #1a2535, #242f3d);
+      background: linear-gradient(135deg, var(--bg-elevated), var(--card));
     }
 
     .gallery-dots {
@@ -260,7 +267,7 @@
       font-weight: 500;
     }
     .profile-bio {
-      color: #93afc8;
+      color: var(--text-secondary);
       line-height: 1.6;
       font-size: 14px;
       margin-bottom: 22px;
@@ -282,9 +289,9 @@
     }
     .btn-action:active:not(:disabled) { transform: scale(0.98); }
     .btn-action.buy {
-      background: linear-gradient(135deg, #5288c1 0%, #3a6fa8 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
       color: #fff;
-      box-shadow: 0 4px 16px rgba(82,136,193,0.35);
+      box-shadow: 0 4px 16px rgba(224,68,126,0.35);
     }
     .btn-action.active-chat {
       background: rgba(79,186,116,0.15);
@@ -314,8 +321,8 @@
       bottom: 28px;
       left: 50%;
       transform: translateX(-50%) translateY(60px);
-      background: #2c3e50;
-      color: #fff;
+      background: var(--card);
+      color: var(--text);
       padding: 11px 22px;
       border-radius: 24px;
       font-size: 13px;
@@ -343,7 +350,7 @@
     }
     .spin {
       width: 36px; height: 36px;
-      border: 3px solid rgba(82,136,193,0.18);
+      border: 3px solid rgba(224,68,126,0.18);
       border-top-color: var(--accent);
       border-radius: 50%;
       animation: spin 0.75s linear infinite;
@@ -356,7 +363,7 @@
       color: var(--muted);
     }
     .empty-icon { font-size: 52px; margin-bottom: 14px; }
-    .empty-title { font-size: 16px; font-weight: 600; color: #9ab; margin-bottom: 6px; }
+    .empty-title { font-size: 16px; font-weight: 600; color: var(--text-secondary); margin-bottom: 6px; }
     .empty-sub   { font-size: 14px; }
 
     /* ── Model Dashboard ────────────────────── */
@@ -368,6 +375,7 @@
       overflow: hidden;
       margin-bottom: 12px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+      border: 1px solid var(--card-border);
     }
     .model-hero-photo {
       width: 100%;
@@ -378,7 +386,7 @@
     .model-hero-placeholder {
       width: 100%;
       height: 220px;
-      background: linear-gradient(135deg, #1a2535, #242f3d);
+      background: linear-gradient(135deg, var(--bg-elevated), var(--card));
       display: flex;
       align-items: center;
       justify-content: center;
@@ -400,7 +408,7 @@
     }
     .model-hero-bio {
       font-size: 14px;
-      color: #93afc8;
+      color: var(--text-secondary);
       line-height: 1.55;
     }
 
@@ -416,6 +424,7 @@
       padding: 16px 14px;
       text-align: center;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .stat-label {
       font-size: 11px;
@@ -440,14 +449,48 @@
       font-size: 15px;
       font-weight: 700;
       cursor: pointer;
-      background: linear-gradient(135deg, #4fba74 0%, #38a05d 100%);
+      background: linear-gradient(135deg, var(--success) 0%, #28a068 100%);
       color: #fff;
-      box-shadow: 0 4px 16px rgba(79,186,116,0.3);
+      box-shadow: 0 4px 16px rgba(52,199,123,0.3);
       transition: opacity 0.15s, transform 0.1s;
       margin-bottom: 18px;
       letter-spacing: 0.2px;
     }
     .btn-withdraw:active { transform: scale(0.98); }
+    .btn-withdraw:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+      box-shadow: none;
+      transform: none;
+    }
+    .withdraw-progress-wrap {
+      margin-bottom: 10px;
+    }
+    .withdraw-progress-label {
+      display: flex;
+      justify-content: space-between;
+      font-size: 13px;
+      color: var(--muted);
+      margin-bottom: 6px;
+    }
+    .withdraw-progress-bar {
+      height: 6px;
+      border-radius: 3px;
+      background: rgba(255,255,255,0.08);
+      overflow: hidden;
+    }
+    .withdraw-progress-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: linear-gradient(90deg, var(--success), #28a068);
+      transition: width 0.4s;
+    }
+    .withdraw-hint {
+      font-size: 12px;
+      color: var(--muted);
+      text-align: center;
+      margin: 6px 0 14px;
+    }
 
     .section-title {
       font-size: 13px;
@@ -468,11 +511,12 @@
       align-items: center;
       gap: 14px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .chat-avatar {
       width: 44px; height: 44px;
       border-radius: 50%;
-      background: linear-gradient(135deg, #3a6fa8, #5288c1);
+      background: linear-gradient(135deg, var(--accent-dark), var(--accent));
       display: flex;
       align-items: center;
       justify-content: center;
@@ -518,6 +562,8 @@
     .chat-screen { display:flex; flex-direction:column; height:100%; overflow:hidden; }
     .chat-header { padding:12px 16px; background:var(--card); display:flex; align-items:center; gap:10px; box-shadow:0 2px 8px rgba(0,0,0,0.2); flex:none; }
     .chat-back { background:none; border:none; color:var(--accent); font-size:22px; cursor:pointer; padding:2px 8px; line-height:1; }
+    .chat-avatar-sm { width:36px; height:36px; border-radius:50%; overflow:hidden; flex:none; background:var(--muted); display:flex; align-items:center; justify-content:center; font-size:18px; }
+    .chat-avatar-sm img { width:100%; height:100%; object-fit:cover; }
     .chat-partner-name { font-size:15px; font-weight:600; flex:1; }
     .chat-messages { flex:1; overflow-y:auto; padding:12px 14px; display:flex; flex-direction:column; gap:6px; }
     .msg { max-width:78%; padding:9px 13px; border-radius:16px; font-size:14px; line-height:1.45; word-break:break-word; }
@@ -561,6 +607,7 @@
       overflow: hidden;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
       margin-top: 10px;
+      border: 1px solid var(--card-border);
     }
     .rules-header {
       padding: 14px 16px;
@@ -596,7 +643,7 @@
     }
     .rules-list li {
       font-size: 13px;
-      color: #93afc8;
+      color: var(--text-secondary);
       line-height: 1.55;
       padding-left: 20px;
       position: relative;
@@ -647,6 +694,7 @@
       padding: 16px 18px;
       box-shadow: 0 2px 10px rgba(0,0,0,0.2);
       margin-top: 10px;
+      border: 1px solid var(--card-border);
     }
     .revenue-row {
       display: flex;
@@ -673,9 +721,9 @@
       font-size: 15px;
       font-weight: 700;
       cursor: pointer;
-      background: linear-gradient(135deg, #5288c1 0%, #3a6fa8 100%);
+      background: linear-gradient(135deg, var(--accent) 0%, var(--accent-dark) 100%);
       color: #fff;
-      box-shadow: 0 4px 16px rgba(82,136,193,0.3);
+      box-shadow: 0 4px 16px rgba(224,68,126,0.3);
       transition: opacity 0.15s, transform 0.1s;
       letter-spacing: 0.2px;
     }
@@ -688,13 +736,14 @@
       display: flex;
       gap: 14px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .model-thumb-wrap {
       width: 60px; height: 72px;
       flex-shrink: 0;
       border-radius: 10px;
       overflow: hidden;
-      background: #1a2535;
+      background: var(--bg-elevated);
     }
     .model-thumb { width: 100%; height: 100%; object-fit: cover; display: block; }
     .model-thumb-ph {
@@ -717,16 +766,17 @@
       border-radius: 10px; padding: 2px 8px;
       white-space: nowrap;
     }
-    .badge-ok   { background: rgba(79,186,116,0.15);  color: var(--success); border: 1px solid rgba(79,186,116,0.3); }
-    .badge-warn { background: rgba(224,82,82,0.12);   color: #e07070;        border: 1px solid rgba(224,82,82,0.25); }
-    .badge-err  { background: rgba(224,82,82,0.2);    color: #e05252;        border: 1px solid rgba(224,82,82,0.35); }
-    .badge-blue { background: rgba(82,136,193,0.14);  color: #9fc8f0;        border: 1px solid rgba(82,136,193,0.3); }
+    .badge-ok   { background: rgba(52,199,123,0.15);  color: var(--success); border: 1px solid rgba(52,199,123,0.3); }
+    .badge-warn { background: rgba(229,72,77,0.12);   color: var(--danger);  border: 1px solid rgba(229,72,77,0.25); }
+    .badge-err  { background: rgba(229,72,77,0.2);    color: var(--danger);  border: 1px solid rgba(229,72,77,0.35); }
+    .badge-blue { background: rgba(224,68,126,0.14);  color: var(--accent-soft); border: 1px solid rgba(224,68,126,0.3); }
 
     .admin-withdrawal-card {
       background: var(--card);
       border-radius: var(--radius);
       padding: 16px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .wd-header { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; flex-wrap: wrap; }
     .wd-id     { font-size: 12px; color: var(--muted); }
@@ -748,8 +798,8 @@
       transition: opacity 0.15s, transform 0.1s;
     }
     .btn-sm:active { transform: scale(0.97); }
-    .btn-approve { background: rgba(79,186,116,0.18); color: var(--success); border: 1px solid rgba(79,186,116,0.35); }
-    .btn-reject  { background: rgba(224,82,82,0.14);  color: #e05252;        border: 1px solid rgba(224,82,82,0.3); }
+    .btn-approve { background: rgba(52,199,123,0.18);  color: var(--success); border: 1px solid rgba(52,199,123,0.35); }
+    .btn-reject  { background: rgba(229,72,77,0.14);   color: var(--danger);  border: 1px solid rgba(229,72,77,0.3); }
     .btn-muted   { background: rgba(255,255,255,0.07); color: var(--muted); }
 
     .reject-textarea {
@@ -770,6 +820,7 @@
       padding: 12px 16px;
       display: flex; align-items: center; gap: 12px;
       box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+      border: 1px solid var(--card-border);
     }
     .user-info { flex: 1; min-width: 0; }
     .user-name  { font-size: 14px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
@@ -825,11 +876,13 @@ const AUTH = tg.initData ? `tma ${tg.initData}` : null;
 let userBalance = 0;
 let currentModelId = null;
 let currentModelName = '';
-let currentHasChat = false;
+let currentHasChat  = false;
+let currentModelPhoto = '';
 let gSlides = [];
-let chatPollInterval = null;
-let chatLastMsgId = 0;
-let chatContext = null;
+let chatPollInterval  = null;
+let chatLastMsgId     = 0;
+let chatContext       = null;
+let _chatPollRunning  = false;
 let gIndex  = 0;
 let gTouchX = 0;
 
@@ -895,7 +948,7 @@ async function initFanShell(deepModelId) {
       const r = await get(`/api/models/${deepModelId}`);
       if (r.ok) {
         const m = await apiJson(r);
-        openChat(deepModelId, m.name || 'Модель', 'fan');
+        openChat(deepModelId, m.name || 'Модель', 'fan', m.preview_photo || '');
         return;
       }
     } catch (e) {}
@@ -977,7 +1030,7 @@ async function loadFanChatsTab() {
         ? `<div style="min-width:20px;height:20px;border-radius:10px;background:var(--accent);color:#fff;font-size:12px;font-weight:700;display:flex;align-items:center;justify-content:center;padding:0 5px;flex:none;">${c.unread > 99 ? '99+' : c.unread}</div>`
         : `<div style="color:var(--accent);font-size:20px;flex:none;">›</div>`;
       return `
-        <div class="chat-card" onclick="openChat(${c.model_id}, '${esc(c.name)}', 'fan')" style="cursor:pointer;">
+        <div class="chat-card" onclick="openChat(${c.model_id}, '${esc(c.name)}', 'fan', '${esc(c.preview_photo || '')}')" style="cursor:pointer;">
           <div class="chat-avatar">${avatar}</div>
           <div class="chat-info">
             <div class="chat-fan-name">${esc(c.name)}</div>
@@ -1077,7 +1130,26 @@ function renderModelDashboard(data) {
         </div>` : ''}
       </div>
 
-      <button class="btn-withdraw" onclick="doWithdraw()">💸 Вывести средства</button>
+      ${(() => {
+        const MIN_WITHDRAW = 10.0;
+        const bal = data.balance_usd;
+        const canWithdraw = bal >= MIN_WITHDRAW;
+        const pct = Math.min(100, (bal / MIN_WITHDRAW) * 100).toFixed(1);
+        const stillNeed = (MIN_WITHDRAW - bal).toFixed(2);
+        return canWithdraw
+          ? `<button class="btn-withdraw" onclick="doWithdraw()">💸 Вывести средства</button>`
+          : `<div class="withdraw-progress-wrap">
+               <div class="withdraw-progress-label">
+                 <span>До минимума вывода</span>
+                 <span>$${bal.toFixed(2)} / $${MIN_WITHDRAW.toFixed(2)}</span>
+               </div>
+               <div class="withdraw-progress-bar">
+                 <div class="withdraw-progress-fill" style="width:${pct}%"></div>
+               </div>
+             </div>
+             <div class="withdraw-hint">Ещё $${stillNeed} до первого вывода</div>
+             <button class="btn-withdraw" disabled>💸 Вывести средства</button>`;
+      })()}
 
       <div class="section-title">Активные чаты (${data.active_chats ? data.active_chats.length : 0})</div>
       <div class="chat-list">${chatsHTML}</div>
@@ -1127,11 +1199,16 @@ function doWithdraw() {
 
 let _pendingMediaFile = null;
 
-function openChat(partnerId, partnerName, role) {
+function openChat(partnerId, partnerName, role, photoFileId) {
   if (chatPollInterval) { clearInterval(chatPollInterval); chatPollInterval = null; }
-  chatLastMsgId = 0;
+  chatLastMsgId    = 0;
+  _chatPollRunning = false;
   _pendingMediaFile = null;
   chatContext = {role, partnerId, partnerName};
+  const avatarUrl = photoFileId ? `/api/photo/${encodeURIComponent(photoFileId)}` : '';
+  const avatarHTML = avatarUrl
+    ? `<div class="chat-avatar-sm"><img src="${avatarUrl}" alt=""></div>`
+    : `<div class="chat-avatar-sm">💬</div>`;
   const attachBtn = role === 'model'
     ? `<button class="chat-attach-btn" onclick="chatAttachClick()" title="Прикрепить файл">📎</button>
        <input type="file" id="chat-media-input" accept="image/*,video/*" style="display:none" onchange="chatMediaFileSelected(this)">`
@@ -1140,6 +1217,7 @@ function openChat(partnerId, partnerName, role) {
     <div class="chat-screen">
       <div class="chat-header">
         <button class="chat-back" onclick="chatGoBack()">←</button>
+        ${avatarHTML}
         <div class="chat-partner-name">${esc(partnerName)}</div>
       </div>
       <div class="chat-messages" id="chat-msgs"></div>
@@ -1197,7 +1275,8 @@ function _buildMsgBubble(m, isMine) {
 }
 
 async function chatPoll() {
-  if (!chatContext) return;
+  if (!chatContext || _chatPollRunning) return;
+  _chatPollRunning = true;
   const {role, partnerId} = chatContext;
   const url = role === 'fan'
     ? `/api/chat/${partnerId}/messages?since=${chatLastMsgId}`
@@ -1208,16 +1287,22 @@ async function chatPoll() {
     if (msgs && msgs.length) {
       const container = document.getElementById('chat-msgs');
       if (!container) return;
+      const wasAtBottom = container.scrollHeight - container.scrollTop - container.clientHeight < 60;
+      let appended = false;
       msgs.forEach(m => {
+        if (container.querySelector(`[data-msg-id="${m.id}"]`)) return;
         const isMine = (role === 'fan' && m.role === 'fan') || (role === 'model' && m.role === 'model');
         const d = document.createElement('div');
         d.innerHTML = _buildMsgBubble(m, isMine);
         container.appendChild(d.firstElementChild);
         chatLastMsgId = Math.max(chatLastMsgId, m.id);
+        appended = true;
       });
-      container.scrollTop = container.scrollHeight;
+      if (appended && wasAtBottom) container.scrollTop = container.scrollHeight;
     }
-  } catch {}
+  } catch {} finally {
+    _chatPollRunning = false;
+  }
 }
 
 async function chatSend() {
@@ -1409,7 +1494,8 @@ async function openProfile(modelId) {
     const m = await res.json();
     currentHasChat   = m.has_active_chat;
     currentAvailable = m.available !== false;
-    currentModelName = m.name || '';
+    currentModelName  = m.name || '';
+    currentModelPhoto = m.preview_photo || '';
 
     document.getElementById('p-name').textContent = m.name;
     document.getElementById('p-age').textContent  = m.age ? `${m.age} лет` : '';
@@ -1440,7 +1526,7 @@ async function openProfile(modelId) {
     if (!m.available) {
       setBtnSoon();
     } else if (m.has_active_chat) {
-      setBtnActive(m.hours_left || 24, modelId, m.name);
+      setBtnActive(m.hours_left || 24, modelId, m.name, m.preview_photo || '');
     } else {
       setBtnBuy();
     }
@@ -1456,12 +1542,12 @@ function setBtnBuy() {
   b.disabled  = false;
   b.textContent = '💬 Начать чат ($5 / 24ч)';
 }
-function setBtnActive(hours, modelId, modelName) {
+function setBtnActive(hours, modelId, modelName, modelPhoto) {
   const b = document.getElementById('btn-chat');
   b.className = 'btn-action active-chat';
   b.disabled  = false;
   b.textContent = `✅ Чат активен — ещё ${hours}ч`;
-  b.onclick = () => { closeSheet(); openChat(modelId || currentModelId, modelName || currentModelName, 'fan'); };
+  b.onclick = () => { closeSheet(); openChat(modelId || currentModelId, modelName || currentModelName, 'fan', modelPhoto || currentModelPhoto); };
 }
 function setBtnSoon() {
   const b = document.getElementById('btn-chat');
@@ -1686,7 +1772,7 @@ async function showModelDetail(modelId) {
       chatsHtml = '<div class="empty-sub">Нет активных чатов</div>';
     } else {
       chatsHtml = d.chats.map(c => `
-        <div class="wd-header" style="padding:10px 0;border-bottom:1px solid var(--border);">
+        <div class="wd-header" style="padding:10px 0;border-bottom:1px solid var(--card-border);">
           <span style="font-weight:600;">${esc(c.fan_name)}</span>
           <span style="color:var(--success);">⏱ ${c.hours_left}ч ${c.minutes_left}м</span>
         </div>`).join('');
@@ -1780,7 +1866,7 @@ function renderAdminUsers(users) {
             <div class="user-balance">$${u.balance_usd.toFixed(2)}</div>
           </div>
           <div style="display:flex;gap:6px;flex:none;">
-            <button class="btn-sm" style="width:36px;background:#27ae60;border:none;border-radius:8px;color:#fff;font-size:16px;cursor:pointer;"
+            <button class="btn-sm" style="width:36px;background:var(--success);border:none;border-radius:8px;color:#fff;font-size:16px;cursor:pointer;"
               onclick="showAddBalanceForm(${u.user_id})">💵</button>
             ${u.is_banned
               ? `<button class="btn-sm btn-approve" style="width:76px;" onclick="unbanUser(${u.user_id})">✅ Разбан</button>`
@@ -1922,7 +2008,7 @@ function showAddModelWizard() {
 function renderWizardStep() {
   const steps = ['Данные', 'Фото 1', 'Фото 2', 'Медиа', 'TG ID'];
   const prog  = steps.map((s, i) =>
-    `<span style="padding:3px 8px;border-radius:20px;font-size:11px;background:${i <= _wizardStep ? 'var(--accent)' : 'var(--border)'};color:${i <= _wizardStep ? '#fff' : 'var(--muted)'};">${s}</span>`
+    `<span style="padding:3px 8px;border-radius:20px;font-size:11px;background:${i <= _wizardStep ? 'var(--accent)' : 'var(--card-border)'};color:${i <= _wizardStep ? '#fff' : 'var(--muted)'};">${s}</span>`
   ).join('');
 
   let content = '';
@@ -1938,7 +2024,7 @@ function renderWizardStep() {
       <div class="section-title" style="margin-bottom:8px;">Шаг 2: Главное фото (аватар)</div>
       <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Это фото будет показываться в каталоге</div>
       <input type="file" id="wz-photo1" accept="image/*" style="display:none;" onchange="wizardUploadPhoto(1)">
-      <div id="wz-photo1-preview" style="width:100%;height:160px;background:var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo1').click()">
+      <div id="wz-photo1-preview" style="width:100%;height:160px;background:var(--card-border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo1').click()">
         <span style="color:var(--muted);">📷 Нажми чтобы выбрать фото</span>
       </div>
       <button class="btn-sm btn-muted" onclick="wizardSkipPhoto(1)">Пропустить →</button>`;
@@ -1947,7 +2033,7 @@ function renderWizardStep() {
       <div class="section-title" style="margin-bottom:8px;">Шаг 3: Второе фото</div>
       <div style="color:var(--muted);font-size:13px;margin-bottom:12px;">Дополнительное фото профиля</div>
       <input type="file" id="wz-photo2" accept="image/*" style="display:none;" onchange="wizardUploadPhoto(2)">
-      <div id="wz-photo2-preview" style="width:100%;height:160px;background:var(--border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo2').click()">
+      <div id="wz-photo2-preview" style="width:100%;height:160px;background:var(--card-border);border-radius:12px;display:flex;align-items:center;justify-content:center;margin-bottom:12px;overflow:hidden;cursor:pointer;" onclick="document.getElementById('wz-photo2').click()">
         <span style="color:var(--muted);">📷 Нажми чтобы выбрать фото</span>
       </div>
       <button class="btn-sm btn-muted" onclick="wizardSkipPhoto(2)">Пропустить →</button>`;
@@ -2049,7 +2135,7 @@ async function wizardUploadMedia() {
       await apiJson(r);
       const url = URL.createObjectURL(file);
       list.insertAdjacentHTML('beforeend',
-        `<div style="width:60px;height:60px;border-radius:8px;overflow:hidden;background:var(--border);">
+        `<div style="width:60px;height:60px;border-radius:8px;overflow:hidden;background:var(--card-border);">
           <img src="${url}" style="width:100%;height:100%;object-fit:cover;">
         </div>`);
     } catch(e) {
